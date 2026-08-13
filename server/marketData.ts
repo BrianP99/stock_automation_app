@@ -223,7 +223,10 @@ export async function getStockAnalysis(symbol: string): Promise<StockAnalysis> {
   });
 
   const nativePrice = closes[n - 1];
-  const nativePreviousClose = daily.previousClose ?? closes[n - (isLive ? 2 : 1)] ?? nativePrice;
+  // Prefer the previous bar from our own fetched series — Yahoo's `chartPreviousClose`
+  // meta field has been observed to go stale/incorrect for some symbols (e.g. reflecting
+  // a close from well before the requested range), which produced wildly wrong % changes.
+  const nativePreviousClose = closes[n - (isLive ? 2 : 1)] ?? daily.previousClose ?? nativePrice;
   const changePercent = nativePreviousClose
     ? Number((((nativePrice - nativePreviousClose) / nativePreviousClose) * 100).toFixed(2))
     : 0;
