@@ -76,6 +76,26 @@ export interface QuoteSummary {
   currency: 'KRW' | 'USD';
 }
 
+/**
+ * Server-persisted (Netlify Blobs) paper-trading session. A scheduled
+ * function advances this every few minutes independent of any open browser
+ * tab; the dashboard just polls and displays it.
+ */
+export interface TradingSession {
+  config: TradingConfig;
+  portfolio: PortfolioState;
+  tradeOrders: TradeOrder[];
+  chartData: ChartPoint[];
+  latestSignal: TradingSignal | null;
+  latestAiMessage: string;
+  isPaused: boolean;
+  isActive: boolean;
+  lastTradeDate: string;
+  createdAt: string;
+  lastTickAt: string | null;
+  lastError: string | null;
+}
+
 export interface PortfolioState {
   initialCapital: number;
   cashBalance: number;

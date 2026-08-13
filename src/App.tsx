@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Header } from './components/Header';
 import { SetupWizard } from './components/SetupWizard';
 import { TradingDashboard } from './components/TradingDashboard';
@@ -13,11 +13,28 @@ export default function App() {
   const [tradingConfig, setTradingConfig] = useState<TradingConfig | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<AiStockAnalysis | undefined>(undefined);
   const [fontSizeClass, setFontSizeClass] = useState<string>('text-lg'); // Default '크게' for senior usability
+  const [isCheckingSession, setIsCheckingSession] = useState<boolean>(true);
 
   // Modals
   const [isDailyReportOpen, setIsDailyReportOpen] = useState<boolean>(false);
   const [isSafetySettingsOpen, setIsSafetySettingsOpen] = useState<boolean>(false);
   const [isSmsPreviewOpen, setIsSmsPreviewOpen] = useState<boolean>(false);
+
+  // A trading session runs server-side (Netlify scheduled function), so on
+  // load we check whether one is already active — e.g. the browser was
+  // closed for a multi-day test and just got reopened — and jump straight
+  // to the dashboard instead of the setup wizard.
+  useEffect(() => {
+    fetch('/api/session/state')
+      .then((res) => (res.ok ? res.json() : { active: false }))
+      .then((data) => {
+        if (data.active && data.session?.config) {
+          setTradingConfig(data.session.config);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setIsCheckingSession(false));
+  }, []);
 
   const handleStartTrading = (config: TradingConfig, analysis?: AiStockAnalysis) => {
     setTradingConfig(config);
@@ -28,9 +45,18 @@ export default function App() {
     setTradingConfig(null);
   };
 
-  const handleUpdateConfig = (updated: Partial<TradingConfig>) => {
-    if (tradingConfig) {
+  const handleUpdateConfig = async (updated: Partial<TradingConfig>) => {
+    if (!tradingConfig) return;
+    try {
+      const res = await fetch('/api/session/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update-config', configUpdates: updated }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error || '설정을 저장하지 못했습니다.');
       setTradingConfig({ ...tradingConfig, ...updated });
+    } catch (err: any) {
+      alert(err.message || '설정을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.');
     }
   };
 
@@ -50,7 +76,11 @@ export default function App() {
 
       {/* Main Container */}
       <main className="flex-1 pb-16">
-        {!tradingConfig ? (
+        {isCheckingSession ? (
+          <div className="max-w-3xl mx-auto px-4 py-24 text-center">
+            <div className="inline-block w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : !tradingConfig ? (
           <SetupWizard onStartTrading={handleStartTrading} fontSizeClass={fontSizeClass} />
         ) : (
           <TradingDashboard

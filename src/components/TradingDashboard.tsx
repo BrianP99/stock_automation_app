@@ -1,13 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  TradingConfig,
-  TradeOrder,
-  ChartPoint,
-  PortfolioState,
-  AiStockAnalysis,
-  StockAnalysisResponse,
-  TradingSignal,
-} from '../types';
+import React, { useState, useEffect, useRef } from 'react';
+import { TradingConfig, TradeOrder, ChartPoint, TradingSession, AiStockAnalysis } from '../types';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -34,6 +26,7 @@ import {
   AlertTriangle,
   Volume2,
   WifiOff,
+  ServerCog,
 } from 'lucide-react';
 
 interface TradingDashboardProps {
@@ -45,136 +38,39 @@ interface TradingDashboardProps {
   onOpenSmsPreview: () => void;
 }
 
-const POLL_INTERVAL_MS = 30000;
+const POLL_INTERVAL_MS = 20000;
 
-// --- Pure helpers for order execution (kept outside the component so they're easy to reason about) ---
-
-function buildBuyOrder(
-  portfolio: PortfolioState,
-  price: number,
-  qty: number,
-  stockName: string,
-  reason: string,
-  confidence: number
-): { nextPortfolio: PortfolioState; order: TradeOrder } {
-  const cost = qty * price;
-  const newQty = portfolio.holdingQuantity + qty;
-  const newAvgPrice = Math.round((portfolio.holdingQuantity * portfolio.avgBuyPrice + cost) / newQty);
-  const nextPortfolio: PortfolioState = {
-    ...portfolio,
-    cashBalance: portfolio.cashBalance - cost,
-    holdingQuantity: newQty,
-    avgBuyPrice: newAvgPrice,
-    todayTradesCount: portfolio.todayTradesCount + 1,
-  };
-  const order: TradeOrder = {
-    id: `order-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    timestamp: new Date().toLocaleTimeString('ko-KR'),
-    type: 'BUY',
-    stockName,
-    price,
-    quantity: qty,
-    totalAmount: cost,
-    reason,
-    aiConfidence: confidence,
-  };
-  return { nextPortfolio, order };
-}
-
-function buildSellOrder(
-  portfolio: PortfolioState,
-  price: number,
-  qty: number,
-  stockName: string,
-  reason: string,
-  confidence: number
-): { nextPortfolio: PortfolioState; order: TradeOrder } {
-  const proceeds = qty * price;
-  const tradePnL = (price - portfolio.avgBuyPrice) * qty;
-  const nextPortfolio: PortfolioState = {
-    ...portfolio,
-    cashBalance: portfolio.cashBalance + proceeds,
-    holdingQuantity: portfolio.holdingQuantity - qty,
-    todayTradesCount: portfolio.todayTradesCount + 1,
-    winCount: tradePnL >= 0 ? portfolio.winCount + 1 : portfolio.winCount,
-    lossCount: tradePnL < 0 ? portfolio.lossCount + 1 : portfolio.lossCount,
-  };
-  const order: TradeOrder = {
-    id: `order-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    timestamp: new Date().toLocaleTimeString('ko-KR'),
-    type: 'SELL',
-    stockName,
-    price,
-    quantity: qty,
-    totalAmount: proceeds,
-    profitPercent: Number((((price - portfolio.avgBuyPrice) / portfolio.avgBuyPrice) * 100).toFixed(2)),
-    reason,
-    aiConfidence: confidence,
-  };
-  return { nextPortfolio, order };
-}
-
-async function fetchAnalysis(symbol: string): Promise<StockAnalysisResponse> {
-  const res = await fetch(`/api/stock/analysis?symbol=${encodeURIComponent(symbol)}`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || '실시간 시세 조회에 실패했습니다.');
-  }
+async function fetchSessionState(): Promise<{ active: boolean; session?: TradingSession }> {
+  const res = await fetch('/api/session/state');
+  if (!res.ok) throw new Error('세션 상태를 불러오지 못했습니다.');
   return res.json();
 }
 
-function toChartPoint(h: StockAnalysisResponse['history'][number]): ChartPoint {
-  return {
-    time: new Date(h.time).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }),
-    price: h.price,
-    sma5: h.sma5,
-    sma20: h.sma20,
-    sma60: h.sma60,
-    rsi14: h.rsi14,
-    goldenCross: h.goldenCross,
-    deadCross: h.deadCross,
-  };
+async function controlSession(action: 'pause' | 'resume' | 'exit'): Promise<TradingSession> {
+  const res = await fetch('/api/session/control', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action }),
+  });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.error || '요청을 처리하지 못했습니다.');
+  return body;
 }
 
 export const TradingDashboard: React.FC<TradingDashboardProps> = ({
   config,
-  aiAnalysis,
   fontSizeClass,
   onResetSetup,
   onOpenDailyReport,
   onOpenSmsPreview,
 }) => {
-  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [session, setSession] = useState<TradingSession | null>(null);
   const [initializing, setInitializing] = useState<boolean>(true);
   const [initError, setInitError] = useState<string | null>(null);
-  const [retryKey, setRetryKey] = useState<number>(0);
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [isControlling, setIsControlling] = useState<boolean>(false);
 
-  const [portfolio, setPortfolio] = useState<PortfolioState | null>(null);
-  const [currentPrice, setCurrentPrice] = useState<number>(0);
-  const [chartData, setChartData] = useState<ChartPoint[]>([]);
-  const [tradeOrders, setTradeOrders] = useState<TradeOrder[]>([]);
-  const [latestSignal, setLatestSignal] = useState<TradingSignal | null>(null);
-  const [latestAiMessage, setLatestAiMessage] = useState<string>(
-    aiAnalysis?.fatherFriendlyAdvice || 'AI가 실시간 시세와 이동평균선·RSI 지표를 불러오고 있습니다...'
-  );
-  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [nativeInfo, setNativeInfo] = useState<{ price: number; currency: string; fxRate: number | null } | null>(
-    null
-  );
-
-  const portfolioRef = useRef<PortfolioState | null>(null);
-  const configRef = useRef<TradingConfig>(config);
-  const isPausedRef = useRef<boolean>(isPaused);
   const hasCelebrated = useRef<boolean>(false);
-
-  useEffect(() => {
-    configRef.current = config;
-  }, [config]);
-
-  useEffect(() => {
-    isPausedRef.current = isPaused;
-  }, [isPaused]);
 
   const speakText = (text: string) => {
     if ('speechSynthesis' in window) {
@@ -186,7 +82,26 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
     }
   };
 
-  // --- Initialize with real market data once, on stock selection ---
+  const refresh = async () => {
+    try {
+      const state = await fetchSessionState();
+      setConnectionError(null);
+      if (!state.active || !state.session) {
+        // The scheduled tick (or another tab's panic-exit) ended the session.
+        onResetSetup();
+        return;
+      }
+      setSession(state.session);
+    } catch (err: any) {
+      setConnectionError(err.message || '세션 상태 연결에 실패했습니다. 잠시 후 자동으로 재시도합니다.');
+    } finally {
+      setInitializing(false);
+    }
+  };
+
+  // Initial load + periodic refresh — this is a read-only poll now. The
+  // actual buy/sell decisions happen server-side in the scheduled function,
+  // so this keeps working even if the tab is closed and reopened later.
   useEffect(() => {
     let cancelled = false;
     setInitializing(true);
@@ -195,211 +110,66 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
 
     (async () => {
       try {
-        const analysis = await fetchAnalysis(config.stock.symbol);
+        const state = await fetchSessionState();
         if (cancelled) return;
-
-        const initialShares = Math.floor((config.investmentAmount * 0.6) / analysis.price);
-        const initialCash = config.investmentAmount - initialShares * analysis.price;
-        const initPortfolio: PortfolioState = {
-          initialCapital: config.investmentAmount,
-          cashBalance: initialCash,
-          holdingQuantity: initialShares,
-          avgBuyPrice: analysis.price,
-          currentValuation: config.investmentAmount,
-          totalPnL: 0,
-          totalPnLPercent: 0,
-          todayTradesCount: 1,
-          winCount: 1,
-          lossCount: 0,
-        };
-
-        portfolioRef.current = initPortfolio;
-        setPortfolio(initPortfolio);
-        setCurrentPrice(analysis.price);
-        setChartData(analysis.history.map(toChartPoint));
-        setLatestSignal(analysis.signal);
-        setLastUpdated(analysis.asOf);
-        setNativeInfo(
-          analysis.currency === 'USD'
-            ? { price: analysis.nativePrice, currency: analysis.nativeCurrency, fxRate: analysis.fxRateUsedKrw }
-            : null
-        );
-        setTradeOrders([
-          {
-            id: 'order-init',
-            timestamp: new Date().toLocaleTimeString('ko-KR'),
-            type: 'BUY',
-            stockName: config.stock.name,
-            price: analysis.price,
-            quantity: initialShares,
-            totalAmount: initialShares * analysis.price,
-            reason: 'AI 자동매매 시작: 실시간 시세 기준 포트폴리오 초기 분할 매수 60% 실행',
-            aiConfidence: 94,
-          },
-        ]);
-        setLatestAiMessage(aiAnalysis?.fatherFriendlyAdvice || analysis.signal.reason);
+        if (!state.active || !state.session) {
+          setInitError('진행 중인 자동매매 세션을 찾을 수 없습니다.');
+          return;
+        }
+        setSession(state.session);
       } catch (err: any) {
-        if (!cancelled) setInitError(err.message || '실시간 시세를 불러오지 못했습니다.');
+        if (!cancelled) setInitError(err.message || '세션을 불러오지 못했습니다.');
       } finally {
         if (!cancelled) setInitializing(false);
       }
     })();
 
+    const interval = setInterval(refresh, POLL_INTERVAL_MS);
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.stock.symbol, retryKey]);
+  }, [config.stock.symbol]);
 
-  // --- Poll real market data, recompute indicators server-side, and act on the rule-based signal ---
-  const tick = useCallback(async () => {
-    const cfg = configRef.current;
-    const prevPortfolio = portfolioRef.current;
-    if (!prevPortfolio) return;
+  // Cosmetic-only: celebrate once per session when target profit is reached.
+  useEffect(() => {
+    if (!session) return;
+    if (session.portfolio.totalPnLPercent >= session.config.targetProfitPercent && !hasCelebrated.current) {
+      hasCelebrated.current = true;
+      confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+    }
+  }, [session]);
 
-    let analysis: StockAnalysisResponse;
+  const handlePause = async () => {
+    if (!session) return;
+    setIsControlling(true);
     try {
-      analysis = await fetchAnalysis(cfg.stock.symbol);
+      const updated = await controlSession(session.isPaused ? 'resume' : 'pause');
+      setSession(updated);
     } catch (err: any) {
-      setConnectionError(err.message || '실시간 시세 연결에 실패했습니다. 잠시 후 자동으로 재시도합니다.');
+      alert(err.message || '요청을 처리하지 못했습니다.');
+    } finally {
+      setIsControlling(false);
+    }
+  };
+
+  const handlePanicExit = async () => {
+    if (!session) return;
+    if (
+      !window.confirm('정말 보유 주식을 전량 매도하고 자동매매를 종료하시겠습니까? 원금과 수익금이 모두 예수금으로 안전 환원됩니다.')
+    ) {
       return;
     }
-    setConnectionError(null);
-    setCurrentPrice(analysis.price);
-    setChartData(analysis.history.map(toChartPoint));
-    setLatestSignal(analysis.signal);
-    setLastUpdated(analysis.asOf);
-    setNativeInfo(
-      analysis.currency === 'USD'
-        ? { price: analysis.nativePrice, currency: analysis.nativeCurrency, fxRate: analysis.fxRateUsedKrw }
-        : null
-    );
-
-    const stockValuation = prevPortfolio.holdingQuantity * analysis.price;
-    const totalValuation = prevPortfolio.cashBalance + stockValuation;
-    const pnlAmount = totalValuation - prevPortfolio.initialCapital;
-    const pnlPercent = Number(((pnlAmount / prevPortfolio.initialCapital) * 100).toFixed(2));
-
-    let nextPortfolio: PortfolioState = {
-      ...prevPortfolio,
-      currentValuation: totalValuation,
-      totalPnL: pnlAmount,
-      totalPnLPercent: pnlPercent,
-    };
-    let newOrder: TradeOrder | null = null;
-    let messageOverride: string | null = null;
-
-    // Safety guardrails take priority over the technical signal.
-    if (prevPortfolio.holdingQuantity > 0 && pnlPercent <= -cfg.stopLossPercent) {
-      const built = buildSellOrder(
-        nextPortfolio,
-        analysis.price,
-        prevPortfolio.holdingQuantity,
-        cfg.stock.name,
-        `자동 손절 안전장치가 작동했습니다. 설정하신 손실 한도 -${cfg.stopLossPercent}%에 도달해 보유 물량을 전량 매도했습니다.`,
-        99
-      );
-      nextPortfolio = built.nextPortfolio;
-      newOrder = built.order;
-      messageOverride = built.order.reason;
-    } else if (prevPortfolio.holdingQuantity > 0 && pnlPercent >= cfg.targetProfitPercent) {
-      if (!hasCelebrated.current) {
-        hasCelebrated.current = true;
-        confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
-      }
-      const built = buildSellOrder(
-        nextPortfolio,
-        analysis.price,
-        prevPortfolio.holdingQuantity,
-        cfg.stock.name,
-        `목표 수익률 +${cfg.targetProfitPercent}%를 달성해 AI가 자동으로 익절했습니다.`,
-        96
-      );
-      nextPortfolio = built.nextPortfolio;
-      newOrder = built.order;
-      messageOverride = built.order.reason;
-    } else if (analysis.signal.action === 'BUY' && prevPortfolio.todayTradesCount < cfg.maxTradesPerDay) {
-      const qty = Math.max(
-        prevPortfolio.cashBalance >= analysis.price ? 1 : 0,
-        Math.floor((prevPortfolio.cashBalance * 0.3) / analysis.price)
-      );
-      if (qty > 0 && prevPortfolio.cashBalance >= qty * analysis.price) {
-        const built = buildBuyOrder(
-          nextPortfolio,
-          analysis.price,
-          qty,
-          cfg.stock.name,
-          analysis.signal.reason,
-          analysis.signal.confidence
-        );
-        nextPortfolio = built.nextPortfolio;
-        newOrder = built.order;
-      }
-    } else if (
-      analysis.signal.action === 'SELL' &&
-      prevPortfolio.holdingQuantity > 0 &&
-      prevPortfolio.todayTradesCount < cfg.maxTradesPerDay
-    ) {
-      const qty = Math.max(1, Math.ceil(prevPortfolio.holdingQuantity * 0.5));
-      const built = buildSellOrder(
-        nextPortfolio,
-        analysis.price,
-        qty,
-        cfg.stock.name,
-        analysis.signal.reason,
-        analysis.signal.confidence
-      );
-      nextPortfolio = built.nextPortfolio;
-      newOrder = built.order;
-    }
-
-    portfolioRef.current = nextPortfolio;
-    setPortfolio(nextPortfolio);
-    if (newOrder) {
-      const order = newOrder;
-      setTradeOrders((prev) => [order, ...prev]);
-    }
-    setLatestAiMessage(messageOverride || analysis.signal.reason);
-
-    // Only spend a Gemini call to warmly rephrase actual trade actions (not every HOLD tick).
-    if (newOrder && !messageOverride) {
-      fetch('/api/explain-signal', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          stockName: cfg.stock.name,
-          action: analysis.signal.action,
-          confidence: analysis.signal.confidence,
-          reason: analysis.signal.reason,
-          price: analysis.price,
-        }),
-      })
-        .then((r) => r.json())
-        .then((data) => {
-          if (data.fatherExplanation) setLatestAiMessage(data.fatherExplanation);
-        })
-        .catch(() => {});
-    }
-  }, []);
-
-  useEffect(() => {
-    if (isPaused || !portfolio) return;
-    const interval = setInterval(() => {
-      if (!isPausedRef.current) tick();
-    }, POLL_INTERVAL_MS);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPaused, !!portfolio, config.stock.symbol]);
-
-  const handlePanicExit = () => {
-    if (!portfolio) return;
-    if (
-      window.confirm('정말 보유 주식을 전량 매도하고 자동매매를 종료하시겠습니까? 원금과 수익금이 모두 예수금으로 안전 환원됩니다.')
-    ) {
-      const returnAmount = portfolio.holdingQuantity * currentPrice;
-      const totalRefundCash = portfolio.cashBalance + returnAmount;
-      alert(`전량 매도 완료!\n최종 환원 금액: ${Math.round(totalRefundCash).toLocaleString()}원`);
+    setIsControlling(true);
+    try {
+      const updated = await controlSession('exit');
+      alert(`전량 매도 완료!\n최종 환원 금액: ${Math.round(updated.portfolio.cashBalance).toLocaleString()}원`);
       onResetSetup();
+    } catch (err: any) {
+      alert(err.message || '전량 매도에 실패했습니다.');
+    } finally {
+      setIsControlling(false);
     }
   };
 
@@ -407,37 +177,32 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
     return (
       <div className={`max-w-3xl mx-auto px-4 py-24 text-center space-y-4 ${fontSizeClass}`}>
         <div className="inline-block w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-slate-600 font-semibold">
-          {config.stock.name}의 실시간 시세와 이동평균선/RSI 지표를 불러오고 있습니다...
-        </p>
+        <p className="text-slate-600 font-semibold">{config.stock.name} 자동매매 세션을 불러오고 있습니다...</p>
       </div>
     );
   }
 
-  if (initError || !portfolio) {
+  if (initError || !session) {
     return (
       <div className={`max-w-2xl mx-auto px-4 py-24 text-center space-y-5 ${fontSizeClass}`}>
         <WifiOff className="w-12 h-12 text-red-500 mx-auto" />
-        <h3 className="text-xl font-bold text-slate-900">실시간 시세 연결에 실패했습니다</h3>
+        <h3 className="text-xl font-bold text-slate-900">자동매매 세션 연결에 실패했습니다</h3>
         <p className="text-slate-500 text-sm">{initError}</p>
-        <div className="flex items-center justify-center gap-3">
-          <button
-            onClick={() => setRetryKey((k) => k + 1)}
-            className="px-5 py-3 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold"
-          >
-            다시 시도
-          </button>
-          <button onClick={onResetSetup} className="px-5 py-3 rounded-2xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold">
-            종목 다시 선택
-          </button>
-        </div>
+        <button
+          onClick={onResetSetup}
+          className="px-5 py-3 rounded-2xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold"
+        >
+          종목 다시 선택
+        </button>
       </div>
     );
   }
 
+  const { portfolio, tradeOrders, chartData, latestSignal, latestAiMessage, isPaused, lastTickAt, lastError } = session;
   const isProfit = portfolio.totalPnL >= 0;
   const goldenPoints = chartData.filter((p) => p.goldenCross);
   const deadPoints = chartData.filter((p) => p.deadCross);
+  const currentPrice = chartData.length > 0 ? chartData[chartData.length - 1].price : portfolio.avgBuyPrice;
 
   return (
     <div className={`max-w-7xl mx-auto px-4 py-6 space-y-6 ${fontSizeClass}`}>
@@ -485,8 +250,9 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
           </button>
 
           <button
-            onClick={() => setIsPaused(!isPaused)}
-            className={`px-4 py-2.5 rounded-xl font-extrabold text-sm transition-all flex items-center space-x-2 shadow-md ${
+            onClick={handlePause}
+            disabled={isControlling}
+            className={`px-4 py-2.5 rounded-xl font-extrabold text-sm transition-all flex items-center space-x-2 shadow-md disabled:opacity-60 ${
               isPaused ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950' : 'bg-amber-500 hover:bg-amber-400 text-slate-950'
             }`}
           >
@@ -496,7 +262,8 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
 
           <button
             onClick={handlePanicExit}
-            className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-sm transition-all flex items-center space-x-1.5 shadow-md"
+            disabled={isControlling}
+            className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-sm transition-all flex items-center space-x-1.5 shadow-md disabled:opacity-60"
           >
             <ShieldAlert className="w-4 h-4" />
             <span>긴급 전량 매도 후 종료</span>
@@ -504,11 +271,19 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
         </div>
       </div>
 
-      {/* Connection error banner (non-blocking; last known data stays on screen) */}
-      {connectionError && (
+      {/* Persistent-session notice */}
+      <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-2xl p-4 flex items-center gap-3 text-xs sm:text-sm font-semibold">
+        <ServerCog className="w-5 h-5 shrink-0 text-indigo-500" />
+        <span>
+          이 자동매매는 서버에서 5분마다 자동으로 실행됩니다. 이 화면을 닫으셔도 계속 진행되며, 다시 열면 이어서 확인하실 수 있습니다.
+          {lastTickAt && ` (마지막 확인: ${new Date(lastTickAt).toLocaleString('ko-KR')})`}
+        </span>
+      </div>
+
+      {(connectionError || lastError) && (
         <div className="bg-amber-50 border border-amber-300 text-amber-800 rounded-2xl p-4 flex items-center gap-3 text-sm font-semibold">
           <AlertTriangle className="w-5 h-5 shrink-0" />
-          <span>{connectionError}</span>
+          <span>{connectionError || `최근 자동 확인 중 오류가 발생했습니다: ${lastError}`}</span>
         </div>
       )}
 
@@ -555,19 +330,13 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
 
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
-            <span>{config.stock.name} 실시간 현재가</span>
-            <span className="text-emerald-600 font-bold">{connectionError ? '재연결 중' : '실시간'}</span>
+            <span>{config.stock.name} 현재가</span>
+            <span className="text-emerald-600 font-bold">{connectionError ? '재연결 중' : '자동 갱신'}</span>
           </div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-2">
             {currentPrice.toLocaleString()}
             <span className="text-base font-bold text-slate-500 ml-1">원</span>
           </div>
-          {nativeInfo && (
-            <div className="mt-1 text-xs text-slate-500 font-medium">
-              원산지 시세: ${nativeInfo.price.toLocaleString('en-US', { maximumFractionDigits: 2 })} (환율 적용
-              {nativeInfo.fxRate ? ` ${Math.round(nativeInfo.fxRate).toLocaleString()}` : ''}원/$)
-            </div>
-          )}
           <div className="mt-3 text-xs text-slate-600 flex items-center justify-between font-semibold">
             <span>보유 수량: {portfolio.holdingQuantity}주</span>
             <span>평단가: {portfolio.avgBuyPrice.toLocaleString()}원</span>
@@ -599,11 +368,10 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
             <div>
               <h4 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
                 <Activity className="w-5 h-5 text-emerald-600" />
-                <span>{config.stock.name} 실시간 주가 & 이동평균선 차트</span>
+                <span>{config.stock.name} 주가 & 이동평균선 차트</span>
               </h4>
               <p className="text-xs text-slate-500">
-                {lastUpdated ? `${new Date(lastUpdated).toLocaleTimeString('ko-KR')} 기준` : ''} 실시간 시세 · {POLL_INTERVAL_MS / 1000}
-                초 간격 갱신
+                5분마다 서버에서 자동 갱신
                 {latestSignal?.cross && (latestSignal.cross === 'golden' ? ' · 최근 골든크로스 발생' : ' · 최근 데드크로스 발생')}
               </p>
             </div>
@@ -617,11 +385,6 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
               <span className="flex items-center gap-1.5 text-indigo-500">
                 <span className="w-3 h-0.5 bg-indigo-500 inline-block" /> 20일선
               </span>
-              {latestSignal?.action === 'BUY' && latestSignal.cross === 'golden' && (
-                <span className="flex items-center gap-1.5 text-red-500">
-                  <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" /> 골든크로스
-                </span>
-              )}
             </div>
           </div>
 
@@ -635,7 +398,11 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="time" tick={{ fontSize: 11, fill: '#64748b' }} />
+                <XAxis
+                  dataKey="time"
+                  tick={{ fontSize: 11, fill: '#64748b' }}
+                  tickFormatter={(val) => new Date(val).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
+                />
                 <YAxis
                   domain={['auto', 'auto']}
                   tick={{ fontSize: 11, fill: '#64748b' }}
@@ -643,6 +410,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
                   width={60}
                 />
                 <Tooltip
+                  labelFormatter={(val) => new Date(val).toLocaleString('ko-KR')}
                   formatter={(value: any, name: string) => [
                     `${Number(value).toLocaleString()}원`,
                     name === 'price' ? '주가' : name === 'sma5' ? '5일선' : name === 'sma20' ? '20일선' : name,
@@ -679,7 +447,6 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
             </ResponsiveContainer>
           </div>
 
-          {/* RSI + signal explanation strip */}
           {latestSignal && (
             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
               <div className="flex items-center space-x-2 text-slate-700 font-bold">
@@ -718,11 +485,11 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
               <Clock className="w-4 h-4 text-emerald-600" />
               <span>AI 체결 내역 ({tradeOrders.length}건)</span>
             </h4>
-            <span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-bold">실시간 업데이트</span>
+            <span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-bold">자동 업데이트</span>
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-            {tradeOrders.map((order) => {
+            {tradeOrders.map((order: TradeOrder) => {
               const isBuy = order.type === 'BUY';
               return (
                 <div
@@ -735,7 +502,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
                     <span className={`px-2 py-0.5 rounded-full font-black ${isBuy ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'}`}>
                       {isBuy ? 'AI 매수' : 'AI 매도'}
                     </span>
-                    <span className="text-slate-400 font-mono">{order.timestamp}</span>
+                    <span className="text-slate-400 font-mono">{new Date(order.timestamp).toLocaleString('ko-KR')}</span>
                   </div>
 
                   <div className="flex items-baseline justify-between mt-2">

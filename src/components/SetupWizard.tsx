@@ -112,7 +112,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
     handleFetchAiAnalysis(selectedStock, investmentAmount, riskLevel);
   }, [selectedStock.symbol, riskLevel]);
 
-  const handleStart = () => {
+  const [isStarting, setIsStarting] = useState<boolean>(false);
+
+  const handleStart = async () => {
     const config: TradingConfig = {
       stock: selectedStock,
       investmentAmount: investmentAmount,
@@ -123,7 +125,21 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
       maxTradesPerDay: 5,
     };
 
-    onStartTrading(config, aiAnalysis || undefined);
+    setIsStarting(true);
+    try {
+      const res = await fetch('/api/session/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ config, fatherFriendlyAdvice: aiAnalysis?.fatherFriendlyAdvice }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body.error || '자동매매 세션을 시작하지 못했습니다.');
+      onStartTrading(config, aiAnalysis || undefined);
+    } catch (err: any) {
+      alert(err.message || '자동매매 세션을 시작하지 못했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   return (
@@ -479,16 +495,26 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
         <div className="pt-2">
           <button
             onClick={handleStart}
-            className="w-full py-5 px-8 rounded-3xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xl sm:text-2xl shadow-xl shadow-emerald-500/25 transition-all transform hover:-translate-y-1 active:translate-y-0 flex items-center justify-center space-x-3"
+            disabled={isStarting}
+            className="w-full py-5 px-8 rounded-3xl bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xl sm:text-2xl shadow-xl shadow-emerald-500/25 transition-all transform hover:-translate-y-1 active:translate-y-0 flex items-center justify-center space-x-3 disabled:opacity-60 disabled:hover:translate-y-0"
           >
-            <Play className="w-7 h-7 fill-slate-950" />
-            <span>
-              {selectedStock.name} {investmentAmount.toLocaleString()}원 AI 자동매매 시작하기
-            </span>
-            <ArrowRight className="w-6 h-6" />
+            {isStarting ? (
+              <>
+                <div className="w-6 h-6 border-3 border-slate-950 border-t-transparent rounded-full animate-spin" />
+                <span>자동매매 세션을 시작하는 중...</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-7 h-7 fill-slate-950" />
+                <span>
+                  {selectedStock.name} {investmentAmount.toLocaleString()}원 AI 자동매매 시작하기
+                </span>
+                <ArrowRight className="w-6 h-6" />
+              </>
+            )}
           </button>
           <p className="text-center text-xs text-slate-500 mt-3">
-            * 언제든지 일시정지 및 전량 매도 후 원금 회수가 가능합니다.
+            * 서버에서 5분마다 자동으로 매매를 확인하며, 언제든지 일시정지 및 전량 매도 후 원금 회수가 가능합니다.
           </p>
         </div>
       </div>
