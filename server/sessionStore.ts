@@ -26,7 +26,11 @@ const MAX_ORDERS_KEPT = 300;
 const MAX_CHART_POINTS_KEPT = 200;
 
 function store() {
-  return getStore(STORE_NAME);
+  // Strong consistency matters here: pause/exit/config updates must be
+  // immediately visible to the next read (both the dashboard's poll and the
+  // scheduled tick function), or a paused session could keep trading, or a
+  // panic-exit could appear to silently not have happened.
+  return getStore(STORE_NAME, { consistency: 'strong' });
 }
 
 export async function getCurrentSession(): Promise<StoredSession | null> {
