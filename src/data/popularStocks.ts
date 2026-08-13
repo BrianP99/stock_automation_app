@@ -55,30 +55,30 @@ export const POPULAR_STOCKS: Stock[] = [
     symbol: 'NVDA',
     name: '엔비디아 (Nvidia)',
     category: '미국 AI 그래픽/칩',
-    currentPrice: 128500, // Converted into KRW roughly for display simplicity or represented in KRW
+    currentPrice: 180, // Seed value in native USD; overwritten by a live quote on load.
     changePercent: 3.45,
     marketCap: '3.1조 달러',
-    currency: 'KRW',
+    currency: 'USD',
     description: '글로벌 AI 혁신을 이끄는 세계 1위 반도체 설계 기업'
   },
   {
     symbol: 'AAPL',
     name: '애플 (Apple)',
     category: '미국 대형 기술주',
-    currentPrice: 305000,
+    currentPrice: 230, // Seed value in native USD; overwritten by a live quote on load.
     changePercent: 0.95,
     marketCap: '3.4조 달러',
-    currency: 'KRW',
+    currency: 'USD',
     description: '아이폰 및 글로벌 생태계를 보유한 세계 최대 IT 기업'
   },
   {
     symbol: 'TSLA',
     name: '테슬라 (Tesla)',
     category: '미국 전기차/자율주행',
-    currentPrice: 298000,
+    currentPrice: 250, // Seed value in native USD; overwritten by a live quote on load.
     changePercent: -1.24,
     marketCap: '7800억 달러',
-    currency: 'KRW',
+    currency: 'USD',
     description: '세계 대표 전기차 및 로봇 자율주행 AI 기업'
   }
 ];

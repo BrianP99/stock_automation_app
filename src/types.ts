@@ -37,10 +37,43 @@ export interface TradeOrder {
 export interface ChartPoint {
   time: string;
   price: number;
-  ma5?: number;
-  ma20?: number;
-  buySignal?: boolean;
-  sellSignal?: boolean;
+  sma5?: number | null;
+  sma20?: number | null;
+  sma60?: number | null;
+  rsi14?: number | null;
+  goldenCross?: boolean;
+  deadCross?: boolean;
+}
+
+export type CrossType = 'golden' | 'dead' | null;
+
+export interface TradingSignal {
+  action: 'BUY' | 'SELL' | 'HOLD';
+  confidence: number;
+  reason: string;
+  cross: CrossType;
+}
+
+export interface StockAnalysisResponse {
+  symbol: string;
+  yahooSymbol: string;
+  currency: 'KRW' | 'USD';
+  price: number;
+  nativePrice: number;
+  nativeCurrency: string;
+  fxRateUsedKrw: number | null;
+  previousClose: number;
+  changePercent: number;
+  asOf: string;
+  isLive: boolean;
+  history: ChartPoint[];
+  signal: TradingSignal;
+}
+
+export interface QuoteSummary {
+  price: number;
+  changePercent: number;
+  currency: 'KRW' | 'USD';
 }
 
 export interface PortfolioState {
@@ -65,14 +98,6 @@ export interface AiStockAnalysis {
   recommendedStopLoss: number;
   keyBuySignals: string[];
   riskFactor: string;
-}
-
-export interface AiTradeDecision {
-  action: 'BUY' | 'SELL' | 'HOLD';
-  quantity: number;
-  confidence: number;
-  reason: string;
-  fatherExplanation: string;
 }
 
 export interface DailyReport {

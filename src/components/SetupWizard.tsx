@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Stock, RiskLevel, TradingConfig, AiStockAnalysis } from '../types';
+import { Stock, RiskLevel, TradingConfig, AiStockAnalysis, StockAnalysisResponse, QuoteSummary } from '../types';
 import { POPULAR_STOCKS, PRESET_AMOUNTS } from '../data/popularStocks';
+import { formatPrice } from '../lib/format';
 import {
   TrendingUp,
   ShieldCheck,
@@ -30,6 +31,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
   const [customTargetProfit, setCustomTargetProfit] = useState<number>(4.0);
   const [customStopLoss, setCustomStopLoss] = useState<number>(2.5);
 
+  // Live quotes for the stock-picker cards (falls back to seed values in POPULAR_STOCKS)
+  const [liveQuotes, setLiveQuotes] = useState<Record<string, QuoteSummary | null>>({});
+
   // Gemini AI Analysis State
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [aiAnalysis, setAiAnalysis] = useState<AiStockAnalysis | null>(null);
@@ -37,18 +41,51 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
   // Search filter
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  const filteredStocks = POPULAR_STOCKS.filter(
+  const displayStocks: Stock[] = POPULAR_STOCKS.map((s) => {
+    const live = liveQuotes[s.symbol];
+    return live ? { ...s, currentPrice: live.price, changePercent: live.changePercent } : s;
+  });
+
+  const filteredStocks = displayStocks.filter(
     (s) =>
       s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.symbol.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.category.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Handle Gemini AI Stock Analysis Fetch
+  // Fetch real-time quotes once for all the picker cards
+  useEffect(() => {
+    const symbols = POPULAR_STOCKS.map((s) => s.symbol).join(',');
+    fetch(`/api/stock/quotes?symbols=${encodeURIComponent(symbols)}`)
+      .then((res) => (res.ok ? res.json() : {}))
+      .then((data: Record<string, QuoteSummary | null>) => setLiveQuotes(data))
+      .catch(() => {});
+  }, []);
+
+  // Handle Gemini AI Stock Analysis Fetch, grounded in real technical indicators when available
   const handleFetchAiAnalysis = async (stock: Stock, amount: number, risk: RiskLevel) => {
     setIsAnalyzing(true);
     setAiAnalysis(null);
     try {
+      let market: any = undefined;
+      try {
+        const marketRes = await fetch(`/api/stock/analysis?symbol=${encodeURIComponent(stock.symbol)}`);
+        if (marketRes.ok) {
+          const analysis: StockAnalysisResponse = await marketRes.json();
+          market = {
+            price: analysis.price,
+            changePercent: analysis.changePercent,
+            sma5: analysis.history[analysis.history.length - 1]?.sma5 ?? null,
+            sma20: analysis.history[analysis.history.length - 1]?.sma20 ?? null,
+            rsi14: analysis.history[analysis.history.length - 1]?.rsi14 ?? null,
+            signalAction: analysis.signal.action,
+            signalReason: analysis.signal.reason,
+          };
+        }
+      } catch {
+        // Real-time data unavailable — Gemini will fall back to a generic (labelled) analysis.
+      }
+
       const res = await fetch('/api/analyze-stock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -56,6 +93,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
           stockName: stock.name,
           investmentAmount: amount,
           riskLevel: risk,
+          market,
         }),
       });
       const data: AiStockAnalysis = await res.json();
@@ -172,16 +210,23 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
                   )}
 
                   <div>
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                      {stock.category}
-                    </span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                        {stock.category}
+                      </span>
+                      {liveQuotes[stock.symbol] && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                          실시간
+                        </span>
+                      )}
+                    </div>
                     <h4 className="text-lg font-extrabold text-slate-900 mt-2">{stock.name}</h4>
                     <p className="text-xs text-slate-500 font-mono mt-0.5">{stock.symbol}</p>
                   </div>
 
                   <div className="mt-4 pt-3 border-t border-slate-100 flex items-baseline justify-between">
                     <span className="text-sm font-bold text-slate-800">
-                      {stock.currentPrice.toLocaleString()}원
+                      {formatPrice(stock.currentPrice, stock.currency)}
                     </span>
                     <span
                       className={`text-xs font-bold ${
