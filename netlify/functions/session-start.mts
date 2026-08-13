@@ -10,7 +10,7 @@ import type { TradingConfig, TradeOrder, ChartPoint } from '../../src/types';
 export default async (req: Request) => {
   const body = await req.json();
   const config: TradingConfig = body.config;
-  const fatherFriendlyAdvice: string | undefined = body.fatherFriendlyAdvice;
+  const initialAdvice: string | undefined = body.advice;
 
   if (!config?.stock?.symbol) {
     return new Response(JSON.stringify({ error: 'config.stock.symbol is required' }), {
@@ -73,7 +73,7 @@ export default async (req: Request) => {
       tradeOrders: [initOrder],
       chartData,
       latestSignal: analysis.signal,
-      latestAiMessage: fatherFriendlyAdvice || analysis.signal.reason,
+      latestAiMessage: initialAdvice || analysis.signal.reason,
       isPaused: false,
       isActive: true,
       lastTradeDate: seoulDateString(),

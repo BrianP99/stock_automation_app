@@ -112,7 +112,7 @@ export interface PortfolioState {
 export interface AiStockAnalysis {
   stockName: string;
   summary: string;
-  fatherFriendlyAdvice: string;
+  advice: string;
   marketTrend: '상승 추세 📈' | '보합세 ⚖️' | '조정 장세 📉';
   recommendedTargetProfit: number;
   recommendedStopLoss: number;
@@ -127,5 +127,5 @@ export interface DailyReport {
   todayReturnAmount: number;
   totalTrades: number;
   summaryText: string;
-  aiFatherLetter: string;
+  summaryLetter: string;
 }

@@ -97,7 +97,7 @@ async function startServer() {
   });
 
   // API 3: Explain a signal already decided by the technical-indicator engine (/api/stock/analysis).
-  // Gemini only rephrases warmly for the father — it never chooses the action itself.
+  // Gemini only rephrases it in plain language — it never chooses the action itself.
   app.post('/api/explain-signal', async (req, res) => {
     const { stockName, action, confidence, reason, price } = req.body;
     const templateFallback = explainSignalFallback(stockName, action, reason);
@@ -113,10 +113,10 @@ async function startServer() {
         },
       });
       const parsed = JSON.parse(response.text || '{}');
-      return res.json({ fatherExplanation: parsed.fatherExplanation || templateFallback });
+      return res.json({ explanation: parsed.explanation || templateFallback });
     } catch (err: any) {
       console.error('Error explaining signal with Gemini:', err);
-      return res.json({ fatherExplanation: templateFallback });
+      return res.json({ explanation: templateFallback });
     }
   });
 

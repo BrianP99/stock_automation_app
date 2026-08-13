@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, X, Sparkles, Heart, FileText, CheckCircle, ShieldCheck } from 'lucide-react';
+import { Volume2, X, Sparkles, FileText, CheckCircle, ShieldCheck } from 'lucide-react';
 import { PortfolioState, TradingConfig } from '../types';
 
 interface AiBriefingModalProps {
@@ -60,13 +60,13 @@ export const AiBriefingModal: React.FC<AiBriefingModalProps> = ({
     }
 
     const fullText = `${briefing.title || '오늘의 AI 자동매매 리포트'}. ${briefing.summaryText || ''}. ${
-      briefing.aiFatherLetter || ''
+      briefing.summaryLetter || ''
     }. ${briefing.tomorrowPreview || ''}`;
 
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(fullText);
     utterance.lang = 'ko-KR';
-    utterance.rate = 0.9; // Friendly gentle pace for father
+    utterance.rate = 0.9;
     utterance.onend = () => setIsPlayingAudio(false);
     utterance.onerror = () => setIsPlayingAudio(false);
 
@@ -90,14 +90,14 @@ export const AiBriefingModal: React.FC<AiBriefingModalProps> = ({
         {/* Header Title */}
         <div className="flex items-center space-x-3 mb-6">
           <div className="w-12 h-12 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-            <Heart className="w-6 h-6 fill-amber-400" />
+            <FileText className="w-6 h-6" />
           </div>
           <div>
             <span className="text-xs font-bold text-amber-400 uppercase tracking-wider">
-              효도 AI 전담 보고서
+              AI 자동매매 리포트
             </span>
             <h3 className="text-2xl font-black text-white">
-              아버지께 드리는 오늘의 AI 매매 편지 ✉️
+              오늘의 AI 매매 요약
             </h3>
           </div>
         </div>
@@ -138,7 +138,7 @@ export const AiBriefingModal: React.FC<AiBriefingModalProps> = ({
               </div>
             </div>
 
-            {/* AI Father Letter Box */}
+            {/* AI Summary Box */}
             <div className="bg-slate-800/50 border border-amber-500/30 rounded-2xl p-5 space-y-3 relative overflow-hidden">
               <div className="flex items-center justify-between border-b border-slate-700/80 pb-3">
                 <span className="text-sm font-bold text-amber-300 flex items-center gap-1.5">
@@ -159,7 +159,7 @@ export const AiBriefingModal: React.FC<AiBriefingModalProps> = ({
               </div>
 
               <p className="text-base sm:text-lg text-slate-200 font-medium leading-relaxed italic pt-1">
-                "{briefing?.aiFatherLetter}"
+                "{briefing?.summaryLetter}"
               </p>
             </div>
 

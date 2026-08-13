@@ -130,7 +130,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
       const res = await fetch('/api/session/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config, fatherFriendlyAdvice: aiAnalysis?.fatherFriendlyAdvice }),
+        body: JSON.stringify({ config, advice: aiAnalysis?.advice }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body.error || '자동매매 세션을 시작하지 못했습니다.');
@@ -144,14 +144,14 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
 
   return (
     <div className={`max-w-5xl mx-auto px-4 py-6 ${fontSizeClass}`}>
-      {/* Father Welcome Banner */}
+      {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-3xl p-6 sm:p-8 text-white border border-slate-700 shadow-xl mb-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div>
             <div className="inline-flex items-center space-x-2 bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full text-sm font-semibold border border-emerald-500/30 mb-3">
               <Sparkles className="w-4 h-4 text-emerald-400" />
-              <span>아버지를 위한 1분 초간단 AI 세팅</span>
+              <span>1분 초간단 AI 세팅</span>
             </div>
             <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white mb-2">
               투자하실 <span className="text-emerald-400">종목</span>과{' '}
@@ -447,15 +447,15 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
             </div>
           ) : aiAnalysis ? (
             <div className="space-y-4">
-              {/* Father Advice Bubble */}
+              {/* AI Advice Bubble */}
               <div className="bg-emerald-950/60 border border-emerald-500/30 rounded-2xl p-4 flex items-start space-x-3">
                 <div className="text-2xl mt-0.5">💬</div>
                 <div>
                   <h5 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-1">
-                    아버지께 올리는 AI 조언
+                    AI 조언
                   </h5>
                   <p className="text-sm sm:text-base text-emerald-100 font-medium leading-relaxed">
-                    "{aiAnalysis.fatherFriendlyAdvice}"
+                    "{aiAnalysis.advice}"
                   </p>
                 </div>
               </div>

@@ -53,7 +53,7 @@ export default async (req: Request) => {
             stopLossPercent: session.config.stopLossPercent,
             maxTradesPerDay: session.config.maxTradesPerDay,
           },
-          '아버지 요청으로 긴급 전량 매도 후 자동매매를 종료했습니다.',
+          '사용자 요청으로 긴급 전량 매도 후 자동매매를 종료했습니다.',
           99
         );
         session.portfolio = result.portfolio;

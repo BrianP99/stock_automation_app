@@ -6,13 +6,13 @@ import { AiBriefingModal } from './components/AiBriefingModal';
 import { SafetySettingsModal } from './components/SafetySettingsModal';
 import { SmsPreviewModal } from './components/SmsPreviewModal';
 import { TradingConfig, AiStockAnalysis } from './types';
-import { Bot, ShieldCheck, Heart } from 'lucide-react';
+import { Bot, ShieldCheck } from 'lucide-react';
 
 export default function App() {
   // Application State
   const [tradingConfig, setTradingConfig] = useState<TradingConfig | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<AiStockAnalysis | undefined>(undefined);
-  const [fontSizeClass, setFontSizeClass] = useState<string>('text-lg'); // Default '크게' for senior usability
+  const [fontSizeClass, setFontSizeClass] = useState<string>('text-lg');
   const [isCheckingSession, setIsCheckingSession] = useState<boolean>(true);
 
   // Modals
@@ -99,14 +99,13 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 text-center space-y-2">
           <div className="flex items-center justify-center space-x-2 text-slate-400 font-semibold text-sm">
             <Bot className="w-4 h-4 text-emerald-400" />
-            <span>아버지를 위한 AI 주식 자동매매 시스템</span>
-            <Heart className="w-4 h-4 text-red-500 fill-red-500" />
+            <span>AI 주식 자동매매 시스템</span>
           </div>
           <p className="max-w-2xl mx-auto leading-relaxed text-slate-400">
-            * 본 시스템은 실제 주식 시장 수급 및 Gemini AI 정밀 분석 기술을 기반으로 작동하는 
+            * 본 시스템은 실제 주식 시장 수급 및 Gemini AI 정밀 분석 기술을 기반으로 작동하는
             시뮬레이션 및 자동 매매 가이드입니다. 투자 자산의 안전을 보장하도록 자동 손절/익절 안전장치가 가동됩니다.
           </p>
-          <p className="text-slate-400 font-mono">© 2026 AI Stock Auto-Trader for Father. All rights reserved.</p>
+          <p className="text-slate-400 font-mono">© 2026 AI Stock Auto-Trader. All rights reserved.</p>
         </div>
       </footer>
 

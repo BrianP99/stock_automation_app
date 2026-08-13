@@ -15,12 +15,12 @@ export default async (req: Request) => {
       config: { responseMimeType: 'application/json', responseSchema: EXPLAIN_SIGNAL_SCHEMA },
     });
     const parsed = JSON.parse(response.text || '{}');
-    return new Response(JSON.stringify({ fatherExplanation: parsed.fatherExplanation || templateFallback }), {
+    return new Response(JSON.stringify({ explanation: parsed.explanation || templateFallback }), {
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (err) {
     console.error('Error explaining signal with Gemini:', err);
-    return new Response(JSON.stringify({ fatherExplanation: templateFallback }), {
+    return new Response(JSON.stringify({ explanation: templateFallback }), {
       headers: { 'Content-Type': 'application/json' },
     });
   }

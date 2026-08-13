@@ -30,9 +30,9 @@ export const SmsPreviewModal: React.FC<SmsPreviewModalProps> = ({
             <MessageSquare className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-white">아버지 안심 문자/알림톡</h3>
+            <h3 className="text-xl font-bold text-white">체결 알림 문자/알림톡</h3>
             <p className="text-xs text-slate-400">
-              AI 체결 시 아버지 휴대전화로 전송되는 실제 알림 예시입니다.
+              AI 체결 시 휴대전화로 전송되는 실제 알림 예시입니다.
             </p>
           </div>
         </div>
@@ -49,7 +49,7 @@ export const SmsPreviewModal: React.FC<SmsPreviewModalProps> = ({
               📢 {config.stock.name} AI 매수 체결 안내
             </p>
             <p className="text-slate-700">
-              아버지, AI 비서가 <strong className="text-amber-900">{config.stock.name}</strong> 10주를
+              AI 자동매매가 <strong className="text-amber-900">{config.stock.name}</strong> 10주를
               평균가 <strong className="text-amber-900">{config.stock.currentPrice.toLocaleString()}원</strong>에
               안전하게 분할 매수하였습니다.
             </p>
@@ -59,7 +59,7 @@ export const SmsPreviewModal: React.FC<SmsPreviewModalProps> = ({
           </div>
 
           <div className="pt-2 border-t border-amber-200 text-xs text-slate-600 flex items-center justify-between font-semibold">
-            <span>알림 수신: 아버지 휴대전화</span>
+            <span>알림 수신: 등록된 휴대전화</span>
             <span className="flex items-center text-emerald-700">
               <CheckCheck className="w-4 h-4 mr-0.5" /> 연동 완료
             </span>

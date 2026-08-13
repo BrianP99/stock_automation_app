@@ -33,11 +33,11 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center space-x-2">
               <h1 className="font-bold text-xl sm:text-2xl text-white tracking-tight">
-                아버지의 <span className="text-emerald-400">AI 주식 자동매매</span>
+                <span className="text-emerald-400">AI 주식 자동매매</span>
               </h1>
               <span className="hidden sm:inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                 <ShieldCheck className="w-3.5 h-3.5 mr-1" />
-                안전 효도 모드
+                안전 모드
               </span>
             </div>
             <p className="text-xs text-slate-400">
