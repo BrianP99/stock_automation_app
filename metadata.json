@@ -1,0 +1,6 @@
+{
+  "name": "AI 주식 자동매매",
+  "description": "아버지를 위한 간편한 AI 주식 자동매매 웹앱. 종목과 투자금만 입력하면 AI가 시장 분석과 실시간 자동 매매를 손쉽게 시작합니다.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
