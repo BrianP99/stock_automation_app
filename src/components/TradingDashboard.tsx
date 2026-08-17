@@ -1,17 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { TradingConfig, TradeOrder, ChartPoint, TradingSession, AiStockAnalysis } from '../types';
-import {
-  ResponsiveContainer,
-  ComposedChart,
-  Area,
-  Line,
-  XAxis,
-  YAxis,
-  Tooltip,
-  CartesianGrid,
-  ReferenceLine,
-  ReferenceDot,
-} from 'recharts';
+import { TradingConfig, TradeOrder, TradingSession } from '../types';
 import confetti from 'canvas-confetti';
 import {
   TrendingUp,
@@ -21,17 +9,17 @@ import {
   ShieldAlert,
   Bot,
   Clock,
-  Zap,
-  Activity,
   AlertTriangle,
   Volume2,
   WifiOff,
   ServerCog,
 } from 'lucide-react';
+import { HoldingsPanel } from './HoldingsPanel';
+import { WatchlistPanel } from './WatchlistPanel';
+import { StockSearchPanel } from './StockSearchPanel';
 
 interface TradingDashboardProps {
   config: TradingConfig;
-  aiAnalysis?: AiStockAnalysis;
   fontSizeClass: string;
   onResetSetup: () => void;
   onOpenDailyReport: () => void;
@@ -46,15 +34,15 @@ async function fetchSessionState(): Promise<{ active: boolean; session?: Trading
   return res.json();
 }
 
-async function controlSession(action: 'pause' | 'resume' | 'exit'): Promise<TradingSession> {
+async function controlSession(action: string, extra?: Record<string, unknown>): Promise<TradingSession> {
   const res = await fetch('/api/session/control', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action }),
+    body: JSON.stringify({ action, ...extra }),
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error || '요청을 처리하지 못했습니다.');
-  return body;
+  return body.session ?? body;
 }
 
 export const TradingDashboard: React.FC<TradingDashboardProps> = ({
@@ -69,6 +57,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
   const [initError, setInitError] = useState<string | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isControlling, setIsControlling] = useState<boolean>(false);
+  const [sellingSymbol, setSellingSymbol] = useState<string | null>(null);
 
   const hasCelebrated = useRef<boolean>(false);
 
@@ -130,7 +119,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.stock.symbol]);
+  }, []);
 
   // Cosmetic-only: celebrate once per session when target profit is reached.
   useEffect(() => {
@@ -154,18 +143,36 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
     }
   };
 
+  const handleSellPosition = async (symbol: string) => {
+    if (!window.confirm('이 종목을 지금 긴급 매도할까요?')) return;
+    setSellingSymbol(symbol);
+    try {
+      const updated = await controlSession('sell-position', { symbol });
+      setSession(updated);
+    } catch (err: any) {
+      alert(err.message || '매도에 실패했습니다.');
+    } finally {
+      setSellingSymbol(null);
+    }
+  };
+
   const handlePanicExit = async () => {
     if (!session) return;
     if (
-      !window.confirm('정말 보유 주식을 전량 매도하고 자동매매를 종료하시겠습니까? 원금과 수익금이 모두 예수금으로 안전 환원됩니다.')
+      !window.confirm('정말 보유 종목을 전량 매도하고 자동매매를 종료하시겠습니까? 원금과 수익금이 모두 예수금으로 안전 환원됩니다.')
     ) {
       return;
     }
     setIsControlling(true);
     try {
       const updated = await controlSession('exit');
-      alert(`전량 매도 완료!\n최종 환원 금액: ${Math.round(updated.portfolio.cashBalance).toLocaleString()}원`);
-      onResetSetup();
+      if (!updated.isActive) {
+        alert(`전량 매도 완료!\n최종 환원 금액: ${Math.round(updated.portfolio.cashBalance).toLocaleString()}원`);
+        onResetSetup();
+      } else {
+        setSession(updated);
+        alert('일부 종목은 시세 조회 실패로 매도되지 못했습니다. 잠시 후 다시 시도해주세요.');
+      }
     } catch (err: any) {
       alert(err.message || '전량 매도에 실패했습니다.');
     } finally {
@@ -177,7 +184,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
     return (
       <div className={`max-w-3xl mx-auto px-4 py-24 text-center space-y-4 ${fontSizeClass}`}>
         <div className="inline-block w-10 h-10 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-        <p className="text-slate-600 font-semibold">{config.stock.name} 자동매매 세션을 불러오고 있습니다...</p>
+        <p className="text-slate-600 font-semibold">AI 자동매매 세션을 불러오고 있습니다...</p>
       </div>
     );
   }
@@ -188,25 +195,20 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
         <WifiOff className="w-12 h-12 text-red-500 mx-auto" />
         <h3 className="text-xl font-bold text-slate-900">자동매매 세션 연결에 실패했습니다</h3>
         <p className="text-slate-500 text-sm">{initError}</p>
-        <button
-          onClick={onResetSetup}
-          className="px-5 py-3 rounded-2xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold"
-        >
-          종목 다시 선택
+        <button onClick={onResetSetup} className="px-5 py-3 rounded-2xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold">
+          처음으로
         </button>
       </div>
     );
   }
 
-  const { portfolio, tradeOrders, chartData, latestSignal, latestAiMessage, isPaused, lastTickAt, lastError } = session;
+  const { portfolio, tradeOrders, watchlist, latestAiMessage, isPaused, lastTickAt, lastError } = session;
   const isProfit = portfolio.totalPnL >= 0;
-  const goldenPoints = chartData.filter((p) => p.goldenCross);
-  const deadPoints = chartData.filter((p) => p.deadCross);
-  const currentPrice = chartData.length > 0 ? chartData[chartData.length - 1].price : portfolio.avgBuyPrice;
+  const heldSymbols = new Set(portfolio.positions.map((p) => p.symbol));
 
   return (
     <div className={`max-w-7xl mx-auto px-4 py-6 space-y-6 ${fontSizeClass}`}>
-      {/* Top Banner: Active Status & AI Live Advice Bar */}
+      {/* Top Banner */}
       <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center space-x-4">
           <div className="w-12 h-12 rounded-2xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
@@ -215,23 +217,13 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
           <div>
             <div className="flex items-center space-x-2 flex-wrap">
               <span className={`w-2.5 h-2.5 rounded-full ${isPaused ? 'bg-slate-500' : 'bg-emerald-400 animate-ping'}`} />
-              <h3 className="text-xl font-black text-white">{config.stock.name} AI 자동매매 가동 중</h3>
+              <h3 className="text-xl font-black text-white">AI 자동매매 가동 중</h3>
               <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full font-bold border border-emerald-500/30">
                 {config.riskLevel === 'SAFE' ? '안정형 🛡️' : config.riskLevel === 'BALANCED' ? '균형형 ⚖️' : '성장형 🚀'}
               </span>
-              {latestSignal && (
-                <span
-                  className={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${
-                    latestSignal.action === 'BUY'
-                      ? 'bg-red-500/20 text-red-300 border-red-500/30'
-                      : latestSignal.action === 'SELL'
-                      ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
-                      : 'bg-slate-500/20 text-slate-300 border-slate-500/30'
-                  }`}
-                >
-                  기술적 신호: {latestSignal.action} ({latestSignal.confidence}%)
-                </span>
-              )}
+              <span className="text-xs bg-slate-700/60 text-slate-200 px-2.5 py-0.5 rounded-full font-bold border border-slate-600">
+                보유 {portfolio.positions.length}/{config.maxConcurrentPositions}종목
+              </span>
             </div>
             <p className="text-sm text-emerald-300 font-medium mt-1 flex items-center gap-1.5">
               <span>"{latestAiMessage}"</span>
@@ -271,11 +263,11 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
         </div>
       </div>
 
-      {/* Persistent-session notice */}
       <div className="bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-2xl p-4 flex items-center gap-3 text-xs sm:text-sm font-semibold">
         <ServerCog className="w-5 h-5 shrink-0 text-indigo-500" />
         <span>
-          이 자동매매는 서버에서 5분마다 자동으로 실행됩니다. 이 화면을 닫으셔도 계속 진행되며, 다시 열면 이어서 확인하실 수 있습니다.
+          AI가 서버에서 5분마다 국내외 약 200개 대장주/유망주를 스캔하며 종목을 직접 선정해 매매합니다. 이 화면을 닫으셔도 계속
+          진행됩니다.
           {lastTickAt && ` (마지막 확인: ${new Date(lastTickAt).toLocaleString('ko-KR')})`}
         </span>
       </div>
@@ -287,9 +279,9 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
         </div>
       )}
 
-      {/* METRICS CARDS GRID */}
+      {/* METRICS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm relative overflow-hidden">
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">총 평가 금액 (원금 + 수익)</div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-2">
             {Math.round(portfolio.currentValuation).toLocaleString()}
@@ -316,30 +308,23 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
             <span className="text-base font-bold ml-1">원</span>
           </div>
           <div className="mt-3 flex items-center space-x-2 flex-wrap gap-y-1">
-            <span
-              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-extrabold ${
-                isProfit ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'
-              }`}
-            >
+            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-extrabold ${isProfit ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>
               수익률 {isProfit ? '+' : ''}
               {portfolio.totalPnLPercent}%
             </span>
-            <span className="text-xs text-slate-500">목표: +{config.targetProfitPercent}%</span>
+            <span className="text-xs text-slate-500">종목별 목표: +{config.targetProfitPercent}%</span>
           </div>
         </div>
 
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
-          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
-            <span>{config.stock.name} 현재가</span>
-            <span className="text-emerald-600 font-bold">{connectionError ? '재연결 중' : '자동 갱신'}</span>
-          </div>
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">예수금 (대기 현금)</div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-2">
-            {currentPrice.toLocaleString()}
+            {Math.round(portfolio.cashBalance).toLocaleString()}
             <span className="text-base font-bold text-slate-500 ml-1">원</span>
           </div>
           <div className="mt-3 text-xs text-slate-600 flex items-center justify-between font-semibold">
-            <span>보유 수량: {portfolio.holdingQuantity}주</span>
-            <span>평단가: {portfolio.avgBuyPrice.toLocaleString()}원</span>
+            <span>오늘 매매: {portfolio.todayTradesCount}회</span>
+            <span>한도: {config.maxTradesPerDay}회</span>
           </div>
         </div>
 
@@ -355,170 +340,78 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between">
-            <span>자동 손절 한도: -{config.stopLossPercent}%</span>
+            <span>종목별 자동 손절: -{config.stopLossPercent}%</span>
             <span className="text-emerald-400 font-bold">안전 작동 중</span>
           </div>
         </div>
       </div>
 
-      {/* MAIN CONTENT AREA */}
+      {/* MAIN CONTENT */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center justify-between pb-2 border-b border-slate-100 flex-wrap gap-2">
-            <div>
-              <h4 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                <Activity className="w-5 h-5 text-emerald-600" />
-                <span>{config.stock.name} 주가 & 이동평균선 차트</span>
+        <div className="lg:col-span-2 space-y-6">
+          <div>
+            <h4 className="text-lg font-extrabold text-slate-900 mb-3">보유 종목</h4>
+            <HoldingsPanel positions={portfolio.positions} onSellPosition={handleSellPosition} isSelling={sellingSymbol} />
+          </div>
+
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
+              <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-emerald-600" />
+                <span>AI 체결 내역 ({tradeOrders.length}건)</span>
               </h4>
-              <p className="text-xs text-slate-500">
-                5분마다 서버에서 자동 갱신
-                {latestSignal?.cross && (latestSignal.cross === 'golden' ? ' · 최근 골든크로스 발생' : ' · 최근 데드크로스 발생')}
-              </p>
-            </div>
-            <div className="flex items-center space-x-3 text-xs font-bold flex-wrap gap-y-1">
-              <span className="flex items-center gap-1.5 text-emerald-600">
-                <span className="w-3 h-3 rounded-full bg-emerald-500 inline-block" /> 주가
-              </span>
-              <span className="flex items-center gap-1.5 text-amber-500">
-                <span className="w-3 h-0.5 bg-amber-500 inline-block" /> 5일선
-              </span>
-              <span className="flex items-center gap-1.5 text-indigo-500">
-                <span className="w-3 h-0.5 bg-indigo-500 inline-block" /> 20일선
-              </span>
-            </div>
-          </div>
-
-          <div className="h-72 w-full pt-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis
-                  dataKey="time"
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  tickFormatter={(val) => new Date(val).toLocaleDateString('ko-KR', { month: '2-digit', day: '2-digit' })}
-                />
-                <YAxis
-                  domain={['auto', 'auto']}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  tickFormatter={(val) => `${val.toLocaleString()}`}
-                  width={60}
-                />
-                <Tooltip
-                  labelFormatter={(val) => new Date(val).toLocaleString('ko-KR')}
-                  formatter={(value: any, name: string) => [
-                    `${Number(value).toLocaleString()}원`,
-                    name === 'price' ? '주가' : name === 'sma5' ? '5일선' : name === 'sma20' ? '20일선' : name,
-                  ]}
-                  contentStyle={{
-                    backgroundColor: '#0f172a',
-                    borderRadius: '16px',
-                    color: '#ffffff',
-                    border: '1px solid #334155',
-                    fontWeight: 'bold',
-                  }}
-                />
-                <ReferenceLine
-                  y={portfolio.avgBuyPrice}
-                  label={{
-                    value: `평단가: ${portfolio.avgBuyPrice.toLocaleString()}원`,
-                    fill: '#ef4444',
-                    fontSize: 11,
-                    fontWeight: 'bold',
-                  }}
-                  stroke="#ef4444"
-                  strokeDasharray="4 4"
-                />
-                <Area type="monotone" dataKey="price" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#priceGradient)" />
-                <Line type="monotone" dataKey="sma5" stroke="#f59e0b" strokeWidth={2} dot={false} connectNulls />
-                <Line type="monotone" dataKey="sma20" stroke="#6366f1" strokeWidth={2} dot={false} connectNulls />
-                {goldenPoints.map((p, i) => (
-                  <ReferenceDot key={`golden-${i}`} x={p.time} y={p.price} r={5} fill="#ef4444" stroke="white" />
-                ))}
-                {deadPoints.map((p, i) => (
-                  <ReferenceDot key={`dead-${i}`} x={p.time} y={p.price} r={5} fill="#3b82f6" stroke="white" />
-                ))}
-              </ComposedChart>
-            </ResponsiveContainer>
-          </div>
-
-          {latestSignal && (
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm">
-              <div className="flex items-center space-x-2 text-slate-700 font-bold">
-                <Zap className="w-4 h-4 text-amber-500" />
-                <span>AI 자동 매매 진행 상태:</span>
-                <span className="text-emerald-700 font-extrabold">{isPaused ? '일시 정지 중' : '실시간 신호 감시 중'}</span>
-                {chartData.length > 0 && chartData[chartData.length - 1].rsi14 != null && (
-                  <span className="text-slate-500 font-semibold">
-                    · RSI {chartData[chartData.length - 1].rsi14!.toFixed(1)}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center gap-2">
                 <button
                   onClick={onOpenDailyReport}
-                  className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 rounded-xl font-bold border border-amber-500/30 transition-colors"
+                  className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 rounded-xl font-bold border border-amber-500/30 transition-colors text-xs"
                 >
                   오늘의 AI 보고서
                 </button>
                 <button
                   onClick={onOpenSmsPreview}
-                  className="px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-700 rounded-xl font-bold border border-teal-500/30 transition-colors"
+                  className="px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-700 rounded-xl font-bold border border-teal-500/30 transition-colors text-xs"
                 >
                   문자 알림 받기
                 </button>
               </div>
             </div>
-          )}
+
+            <div className="max-h-[420px] overflow-y-auto space-y-3 pr-1">
+              {tradeOrders.length === 0 && <p className="text-sm text-slate-500 text-center py-8">아직 체결된 매매가 없습니다.</p>}
+              {tradeOrders.map((order: TradeOrder) => {
+                const isBuy = order.type === 'BUY';
+                return (
+                  <div
+                    key={order.id}
+                    className={`p-3.5 rounded-2xl border transition-all ${
+                      isBuy ? 'bg-red-50/60 border-red-200 text-slate-900' : 'bg-blue-50/60 border-blue-200 text-slate-900'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-xs font-bold mb-1">
+                      <span className={`px-2 py-0.5 rounded-full font-black ${isBuy ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'}`}>
+                        {isBuy ? 'AI 매수' : 'AI 매도'}
+                      </span>
+                      <span className="text-slate-400 font-mono">{new Date(order.timestamp).toLocaleString('ko-KR')}</span>
+                    </div>
+                    <div className="flex items-baseline justify-between mt-2">
+                      <span className="font-extrabold text-slate-900">
+                        {order.stockName} {order.quantity}주 @ {order.price.toLocaleString()}원
+                      </span>
+                      <span className="text-xs font-bold text-slate-600">총 {order.totalAmount.toLocaleString()}원</span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-2 bg-white/80 p-2 rounded-xl border border-slate-200/60 font-medium">
+                      💡 사유: {order.reason}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
-        {/* ORDER LOG STREAM */}
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col h-[460px]">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
-            <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <Clock className="w-4 h-4 text-emerald-600" />
-              <span>AI 체결 내역 ({tradeOrders.length}건)</span>
-            </h4>
-            <span className="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full font-bold">자동 업데이트</span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-            {tradeOrders.map((order: TradeOrder) => {
-              const isBuy = order.type === 'BUY';
-              return (
-                <div
-                  key={order.id}
-                  className={`p-3.5 rounded-2xl border transition-all ${
-                    isBuy ? 'bg-red-50/60 border-red-200 text-slate-900' : 'bg-blue-50/60 border-blue-200 text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center justify-between text-xs font-bold mb-1">
-                    <span className={`px-2 py-0.5 rounded-full font-black ${isBuy ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'}`}>
-                      {isBuy ? 'AI 매수' : 'AI 매도'}
-                    </span>
-                    <span className="text-slate-400 font-mono">{new Date(order.timestamp).toLocaleString('ko-KR')}</span>
-                  </div>
-
-                  <div className="flex items-baseline justify-between mt-2">
-                    <span className="font-extrabold text-slate-900">
-                      {order.quantity}주 @ {order.price.toLocaleString()}원
-                    </span>
-                    <span className="text-xs font-bold text-slate-600">총 {order.totalAmount.toLocaleString()}원</span>
-                  </div>
-
-                  <p className="text-xs text-slate-600 mt-2 bg-white/80 p-2 rounded-xl border border-slate-200/60 font-medium">
-                    💡 사유: {order.reason}
-                  </p>
-                </div>
-              );
-            })}
-          </div>
+        <div className="space-y-6">
+          <WatchlistPanel watchlist={watchlist} heldSymbols={heldSymbols} />
+          <StockSearchPanel />
         </div>
       </div>
     </div>

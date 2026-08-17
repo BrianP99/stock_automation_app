@@ -3,7 +3,6 @@ import { Bot, Volume2, Sparkles, FileText, Settings, ShieldCheck, Zap } from 'lu
 
 interface HeaderProps {
   isTradingActive: boolean;
-  stockName?: string;
   fontSizeClass: string;
   setFontSizeClass: (size: string) => void;
   onOpenDailyReport: () => void;
@@ -14,7 +13,6 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({
   isTradingActive,
-  stockName,
   fontSizeClass,
   setFontSizeClass,
   onOpenDailyReport,
@@ -41,7 +39,7 @@ export const Header: React.FC<HeaderProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              종목과 투자금만 설정하면 AI가 알아서 매매해 드립니다
+투자금만 설정하면 AI가 종목 선정부터 매매까지 전부 알아서 합니다
             </p>
           </div>
         </div>
@@ -52,7 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
           {isTradingActive ? (
             <div className="flex items-center space-x-2 bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 px-3 py-1.5 rounded-xl text-sm font-semibold animate-pulse shadow-sm">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]"></span>
-              <span>AI 자동매매 가동 중 {stockName ? `(${stockName})` : ''}</span>
+              <span>AI 자동매매 가동 중</span>
             </div>
           ) : (
             <div className="flex items-center space-x-2 bg-slate-800/80 border border-slate-700 text-slate-400 px-3 py-1.5 rounded-xl text-sm font-medium">

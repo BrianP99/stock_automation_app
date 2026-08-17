@@ -18,6 +18,7 @@ export const SafetySettingsModal: React.FC<SafetySettingsModalProps> = ({
   const [stopLoss, setStopLoss] = useState<number>(config.stopLossPercent);
   const [targetProfit, setTargetProfit] = useState<number>(config.targetProfitPercent);
   const [maxTrades, setMaxTrades] = useState<number>(config.maxTradesPerDay);
+  const [maxPositions, setMaxPositions] = useState<number>(config.maxConcurrentPositions);
 
   if (!isOpen) return null;
 
@@ -26,6 +27,7 @@ export const SafetySettingsModal: React.FC<SafetySettingsModalProps> = ({
       stopLossPercent: stopLoss,
       targetProfitPercent: targetProfit,
       maxTradesPerDay: maxTrades,
+      maxConcurrentPositions: maxPositions,
     });
     onClose();
   };
@@ -112,6 +114,24 @@ export const SafetySettingsModal: React.FC<SafetySettingsModalProps> = ({
                   }`}
                 >
                   {val}회 제한
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Max Concurrent Positions */}
+          <div>
+            <label className="text-xs font-bold text-slate-300 block mb-2">동시 보유 종목 수</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[3, 4, 5].map((val) => (
+                <button
+                  key={val}
+                  onClick={() => setMaxPositions(val)}
+                  className={`py-2 px-3 rounded-xl font-bold text-sm border ${
+                    maxPositions === val ? 'bg-indigo-500 text-white border-indigo-400' : 'bg-slate-800 text-slate-300 border-slate-700'
+                  }`}
+                >
+                  {val}개
                 </button>
               ))}
             </div>

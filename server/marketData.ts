@@ -248,6 +248,41 @@ export async function getStockAnalysis(symbol: string): Promise<StockAnalysis> {
   };
 }
 
+export interface ScreeningResult {
+  symbol: string;
+  signal: TradingSignal;
+}
+
+/**
+ * Lightweight screening pass for scanning a large universe cheaply: daily
+ * bars only (no intraday tick, no FX conversion) — half the Yahoo requests
+ * of getStockAnalysis(). Signal thresholds are scale-invariant (RSI) or
+ * currency-invariant (MA cross), so skipping FX here doesn't affect the
+ * BUY/SELL/HOLD verdict — only getStockAnalysis's KRW-converted price does,
+ * and that's fetched separately once a symbol becomes an actual candidate.
+ */
+export async function getScreeningSignal(symbol: string): Promise<ScreeningResult> {
+  const daily = await getDailyHistory(symbol);
+  if (daily.close.length < 2) {
+    throw new Error('종목의 시세 데이터를 충분히 가져오지 못했습니다.');
+  }
+  const closes = daily.close;
+  const n = closes.length;
+  const sma5Series = sma(closes, 5);
+  const sma20Series = sma(closes, 20);
+  const rsi14Series = rsi(closes, 14);
+  const signal = generateSignal({
+    price: closes[n - 1],
+    sma5: sma5Series[n - 1],
+    sma20: sma20Series[n - 1],
+    sma60: sma(closes, 60)[n - 1],
+    prevSma5: sma5Series[n - 2] ?? null,
+    prevSma20: sma20Series[n - 2] ?? null,
+    rsi14: rsi14Series[n - 1],
+  });
+  return { symbol, signal };
+}
+
 export interface QuoteSummary {
   /** Native-currency price (matches Stock.currency), e.g. $ for US tickers, 원 for KRX tickers. */
   price: number;

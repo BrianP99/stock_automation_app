@@ -1,12 +1,31 @@
 import type { Config } from '@netlify/functions';
-import { getStockAnalysis } from '../../server/marketData';
-import { applyTick, resetDailyCountersIfNewDay } from '../../server/tradingEngine';
+import { getStockAnalysis, getScreeningSignal } from '../../server/marketData';
+import { runPortfolioTick, resetDailyCountersIfNewDay, type HeldAnalysis, type CandidateAnalysis } from '../../server/tradingEngine';
 import { getCurrentSession, saveCurrentSession } from '../../server/sessionStore';
-import type { ChartPoint } from '../../src/types';
+import { TRADING_UNIVERSE } from '../../server/data/curatedUniverse';
+import type { WatchlistCandidate } from '../../src/types';
 
 // Runs every 5 minutes regardless of whether anyone has the dashboard open.
-// This is what makes a multi-day paper-trading test possible: the browser
-// only ever *displays* state that this function already persisted to Blobs.
+// One function does both the market scan AND the trade decision — folding
+// them together avoids two schedules racing to read-then-write the same
+// singleton session blob.
+
+const CANDIDATE_CONFIDENCE_THRESHOLD = 65;
+const MAX_CANDIDATES_TO_CONFIRM = 20; // bound how many get the heavier full-analysis call
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  async function worker() {
+    while (cursor < items.length) {
+      const i = cursor++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 export default async () => {
   const session = await getCurrentSession();
   if (!session || !session.isActive || session.isPaused) {
@@ -14,36 +33,82 @@ export default async () => {
   }
 
   try {
-    const analysis = await getStockAnalysis(session.config.stock.symbol);
+    // 1) Cheap screen of the whole curated universe (daily bars only).
+    const screenResults = await mapWithConcurrency(TRADING_UNIVERSE, 10, async (u) => {
+      try {
+        const { signal } = await getScreeningSignal(u.symbol);
+        return { u, signal, ok: true as const };
+      } catch {
+        return { u, signal: null, ok: false as const };
+      }
+    });
 
+    const now = new Date().toISOString();
+    const watchlist: WatchlistCandidate[] = screenResults
+      .filter((r) => r.ok && r.signal && r.signal.action === 'BUY' && r.signal.confidence >= CANDIDATE_CONFIDENCE_THRESHOLD)
+      .map((r) => ({
+        symbol: r.u.symbol,
+        name: r.u.name,
+        market: r.u.market,
+        currency: r.u.currency,
+        action: r.signal!.action,
+        confidence: r.signal!.confidence,
+        reason: r.signal!.reason,
+        scannedAt: now,
+      }))
+      .sort((a, b) => b.confidence - a.confidence);
+
+    // 2) Reset daily counters if the Asia/Seoul day has rolled over.
     const { portfolio: resetPortfolio, date } = resetDailyCountersIfNewDay(session.portfolio, session.lastTradeDate);
 
-    const result = applyTick(resetPortfolio, analysis.price, analysis.signal, {
-      stockName: session.config.stock.name,
+    // 3) Full (intraday+FX) analysis for held positions + top unheld candidates.
+    const heldSymbols = new Set(resetPortfolio.positions.map((p) => p.symbol));
+    const topCandidates = watchlist.filter((c) => !heldSymbols.has(c.symbol)).slice(0, MAX_CANDIDATES_TO_CONFIRM);
+
+    const heldAnalyses: HeldAnalysis[] = (
+      await mapWithConcurrency(resetPortfolio.positions, 8, async (position) => {
+        try {
+          return { position, analysis: await getStockAnalysis(position.symbol) };
+        } catch {
+          return null;
+        }
+      })
+    ).filter((x): x is HeldAnalysis => x !== null);
+
+    const candidateAnalyses: CandidateAnalysis[] = (
+      await mapWithConcurrency(topCandidates, 8, async (c) => {
+        try {
+          const analysis = await getStockAnalysis(c.symbol);
+          // Re-confirm with fresh intraday data — the screening pass only saw daily bars.
+          if (analysis.signal.action !== 'BUY') return null;
+          return { symbol: c.symbol, name: c.name, market: c.market, analysis };
+        } catch {
+          return null;
+        }
+      })
+    ).filter((x): x is CandidateAnalysis => x !== null);
+
+    // 4) Run the deterministic multi-position decision.
+    const result = runPortfolioTick(resetPortfolio, heldAnalyses, candidateAnalyses, {
       targetProfitPercent: session.config.targetProfitPercent,
       stopLossPercent: session.config.stopLossPercent,
       maxTradesPerDay: session.config.maxTradesPerDay,
+      maxConcurrentPositions: session.config.maxConcurrentPositions,
     });
 
-    const chartData: ChartPoint[] = analysis.history.map((h) => ({
-      time: h.time,
-      price: h.price,
-      sma5: h.sma5,
-      sma20: h.sma20,
-      sma60: h.sma60,
-      rsi14: h.rsi14,
-      goldenCross: h.goldenCross,
-      deadCross: h.deadCross,
-    }));
-
     session.portfolio = result.portfolio;
-    session.chartData = chartData;
-    session.latestSignal = analysis.signal;
-    session.latestAiMessage = result.order?.reason ?? analysis.signal.reason;
+    session.watchlist = watchlist;
     session.lastTradeDate = date;
-    session.lastTickAt = new Date().toISOString();
+    session.lastTickAt = now;
     session.lastError = null;
-    if (result.order) session.tradeOrders = [result.order, ...session.tradeOrders];
+    if (result.orders.length) {
+      session.tradeOrders = [...result.orders.reverse(), ...session.tradeOrders];
+      session.latestAiMessage = result.orders[result.orders.length - 1].reason;
+    } else if (session.portfolio.positions.length === 0) {
+      session.latestAiMessage = '현재 매수 조건을 만족하는 종목을 계속 탐색 중입니다.';
+    } else {
+      session.latestAiMessage = `${session.portfolio.positions.length}개 종목 보유 중, 실시간 신호를 감시하고 있습니다.`;
+    }
 
     await saveCurrentSession(session);
   } catch (err) {

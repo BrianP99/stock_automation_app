@@ -1,37 +1,43 @@
-export interface Stock {
-  symbol: string;
-  name: string;
-  category: string;
-  currentPrice: number;
-  changePercent: number;
-  marketCap: string;
-  currency: 'KRW' | 'USD';
-  description: string;
-}
+export type Market = 'KRX' | 'US';
 
 export type RiskLevel = 'SAFE' | 'BALANCED' | 'AGGRESSIVE';
 
+/** Portfolio-level configuration. No single stock here anymore — the AI picks everything. */
 export interface TradingConfig {
-  stock: Stock;
-  investmentAmount: number; // in KRW or USD
+  investmentAmount: number; // KRW
   riskLevel: RiskLevel;
-  targetProfitPercent: number; // e.g. 4.5%
-  stopLossPercent: number; // e.g. 2.5%
+  targetProfitPercent: number; // per-position, e.g. 4.5%
+  stopLossPercent: number; // per-position, e.g. 2.5%
   autoTradingEnabled: boolean;
   maxTradesPerDay: number;
+  maxConcurrentPositions: number; // 3-5
+}
+
+/** One currently-held stock in the AI's portfolio. */
+export interface Position {
+  symbol: string;
+  name: string;
+  market: Market;
+  currency: 'KRW' | 'USD';
+  quantity: number;
+  avgBuyPriceNative: number;
+  avgBuyPriceKrw: number;
+  openedAt: string;
 }
 
 export interface TradeOrder {
   id: string;
   timestamp: string;
   type: 'BUY' | 'SELL';
+  symbol: string;
   stockName: string;
-  price: number;
+  market: Market;
+  price: number; // KRW
   quantity: number;
   totalAmount: number;
   profitPercent?: number;
   reason: string;
-  aiConfidence: number; // e.g., 92%
+  aiConfidence: number;
 }
 
 export interface ChartPoint {
@@ -70,10 +76,28 @@ export interface StockAnalysisResponse {
   signal: TradingSignal;
 }
 
-export interface QuoteSummary {
-  price: number;
-  changePercent: number;
+/** A symbol the scanner currently likes, shown in the watchlist panel for transparency. */
+export interface WatchlistCandidate {
+  symbol: string;
+  name: string;
+  market: Market;
   currency: 'KRW' | 'USD';
+  action: 'BUY' | 'SELL' | 'HOLD';
+  confidence: number;
+  reason: string;
+  scannedAt: string;
+}
+
+export interface PortfolioState {
+  initialCapital: number;
+  cashBalance: number; // KRW, unified across markets
+  positions: Position[];
+  currentValuation: number;
+  totalPnL: number;
+  totalPnLPercent: number;
+  todayTradesCount: number;
+  winCount: number;
+  lossCount: number;
 }
 
 /**
@@ -85,8 +109,7 @@ export interface TradingSession {
   config: TradingConfig;
   portfolio: PortfolioState;
   tradeOrders: TradeOrder[];
-  chartData: ChartPoint[];
-  latestSignal: TradingSignal | null;
+  watchlist: WatchlistCandidate[];
   latestAiMessage: string;
   isPaused: boolean;
   isActive: boolean;
@@ -94,38 +117,4 @@ export interface TradingSession {
   createdAt: string;
   lastTickAt: string | null;
   lastError: string | null;
-}
-
-export interface PortfolioState {
-  initialCapital: number;
-  cashBalance: number;
-  holdingQuantity: number;
-  avgBuyPrice: number;
-  currentValuation: number;
-  totalPnL: number;
-  totalPnLPercent: number;
-  todayTradesCount: number;
-  winCount: number;
-  lossCount: number;
-}
-
-export interface AiStockAnalysis {
-  stockName: string;
-  summary: string;
-  advice: string;
-  marketTrend: '상승 추세 📈' | '보합세 ⚖️' | '조정 장세 📉';
-  recommendedTargetProfit: number;
-  recommendedStopLoss: number;
-  keyBuySignals: string[];
-  riskFactor: string;
-}
-
-export interface DailyReport {
-  date: string;
-  stockName: string;
-  todayReturnPercent: number;
-  todayReturnAmount: number;
-  totalTrades: number;
-  summaryText: string;
-  summaryLetter: string;
 }

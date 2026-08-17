@@ -4,10 +4,8 @@ import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { getStockAnalysis, getQuotes } from './server/marketData';
+import { TRADING_UNIVERSE } from './server/data/curatedUniverse';
 import {
-  buildAnalyzeStockPrompt,
-  ANALYZE_STOCK_SCHEMA,
-  analyzeStockFallback,
   buildExplainSignalPrompt,
   EXPLAIN_SIGNAL_SCHEMA,
   explainSignalFallback,
@@ -64,39 +62,17 @@ async function startServer() {
     return res.json(quotes);
   });
 
-  // API 2: Stock Strategy Analysis (종목 AI 전략 분석)
-  app.post('/api/analyze-stock', async (req, res) => {
-    try {
-      const { stockName, investmentAmount, riskLevel, market } = req.body;
-
-      if (!stockName) {
-        return res.status(400).json({ error: 'Stock name is required' });
-      }
-
-      // When the client already fetched real technical data, ground the prompt in it
-      // instead of letting the model invent numbers.
-      const prompt = buildAnalyzeStockPrompt(stockName, investmentAmount, riskLevel, market);
-
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-          responseSchema: ANALYZE_STOCK_SCHEMA,
-        },
-      });
-
-      const analysisData = JSON.parse(response.text || '{}');
-      return res.json(analysisData);
-    } catch (err: any) {
-      console.error('Error analyzing stock with Gemini:', err);
-      // Fallback response if Gemini API key is missing or encounters temporary error.
-      // Grounded in real indicator data when the client sent it.
-      return res.json(analyzeStockFallback(req.body.stockName, req.body.riskLevel, req.body.market));
-    }
+  // API: Search the curated trading universe (for the "view any stock" search panel)
+  app.get('/api/universe/search', (req, res) => {
+    const q = String(req.query.q || '').trim().toLowerCase();
+    if (!q) return res.json({ results: [] });
+    const results = TRADING_UNIVERSE.filter(
+      (u) => u.symbol.toLowerCase().includes(q) || u.name.toLowerCase().includes(q)
+    ).slice(0, 20);
+    return res.json({ results });
   });
 
-  // API 3: Explain a signal already decided by the technical-indicator engine (/api/stock/analysis).
+  // API: Explain a signal already decided by the technical-indicator engine (/api/stock/analysis).
   // Gemini only rephrases it in plain language — it never chooses the action itself.
   app.post('/api/explain-signal', async (req, res) => {
     const { stockName, action, confidence, reason, price } = req.body;
@@ -120,12 +96,12 @@ async function startServer() {
     }
   });
 
-  // API 4: AI Daily Briefing Generator (오늘의 AI 매매 편지/리포트)
+  // API: AI Daily Briefing Generator (오늘의 AI 매매 편지/리포트)
   app.post('/api/daily-briefing', async (req, res) => {
     try {
-      const { stockName, totalReturnAmount, totalReturnPercent, tradesCount, winRate } = req.body;
+      const { heldStockNames, totalReturnAmount, totalReturnPercent, tradesCount, winRate } = req.body;
 
-      const prompt = buildDailyBriefingPrompt(stockName, totalReturnAmount, totalReturnPercent, tradesCount, winRate);
+      const prompt = buildDailyBriefingPrompt(heldStockNames || [], totalReturnAmount, totalReturnPercent, tradesCount, winRate);
 
       const response = await ai.models.generateContent({
         model: 'gemini-3.6-flash',
@@ -140,7 +116,7 @@ async function startServer() {
       return res.json(briefing);
     } catch (err: any) {
       console.error('Error generating daily briefing:', err);
-      return res.json(dailyBriefingFallback(req.body.stockName, req.body.totalReturnAmount, req.body.totalReturnPercent));
+      return res.json(dailyBriefingFallback(req.body.heldStockNames || [], req.body.totalReturnAmount, req.body.totalReturnPercent));
     }
   });
 
