@@ -5,3 +5,8 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  # Netlify sets NODE_ENV=production for builds by default, which makes
+  # `npm ci` skip devDependencies (vite, @netlify/vite-plugin, tailwindcss,
+  # etc.) — but vite.config.ts needs those at build time. Force npm to
+  # install them anyway.
+  NPM_FLAGS = "--include=dev"
