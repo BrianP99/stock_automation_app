@@ -104,6 +104,7 @@ export const StockSearchPanel: React.FC = () => {
               className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border ${marketBadgeClass(selected.market)}`}
             >
               {marketLabel(selected.market)}
+              {analysis?.exchange && ` (${analysis.exchange})`}
             </span>
             <h5 className="font-bold text-slate-900">
               {selected.name} ({selected.symbol})

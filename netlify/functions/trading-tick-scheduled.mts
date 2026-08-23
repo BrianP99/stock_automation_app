@@ -36,10 +36,10 @@ export default async () => {
     // 1) Cheap screen of the whole curated universe (daily bars only).
     const screenResults = await mapWithConcurrency(TRADING_UNIVERSE, 10, async (u) => {
       try {
-        const { signal } = await getScreeningSignal(u.symbol);
-        return { u, signal, ok: true as const };
+        const { signal, exchange } = await getScreeningSignal(u.symbol);
+        return { u, signal, exchange, ok: true as const };
       } catch {
-        return { u, signal: null, ok: false as const };
+        return { u, signal: null, exchange: '', ok: false as const };
       }
     });
 
@@ -50,6 +50,7 @@ export default async () => {
         symbol: r.u.symbol,
         name: r.u.name,
         market: r.u.market,
+        exchange: r.exchange,
         currency: r.u.currency,
         sector: r.u.sector,
         description: r.u.description,

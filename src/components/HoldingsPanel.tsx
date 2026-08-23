@@ -65,6 +65,7 @@ export const HoldingsPanel: React.FC<HoldingsPanelProps> = ({ positions, onSellP
                     className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border ${marketBadgeClass(position.market)}`}
                   >
                     {marketLabel(position.market)}
+                    {position.exchange && ` (${position.exchange})`}
                   </span>
                   <h4 className="text-lg font-extrabold text-slate-900">{position.name}</h4>
                   <span className="text-xs text-slate-400 font-mono">{position.symbol}</span>
