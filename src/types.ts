@@ -1,53 +1,97 @@
-export interface Stock {
-  symbol: string;
-  name: string;
-  category: string;
-  currentPrice: number;
-  changePercent: number;
-  marketCap: string;
-  currency: 'KRW' | 'USD';
-  description: string;
-}
+export type Market = 'KRX' | 'US';
 
 export type RiskLevel = 'SAFE' | 'BALANCED' | 'AGGRESSIVE';
 
+/** Portfolio-level configuration. No single stock here anymore — the AI picks everything. */
 export interface TradingConfig {
-  stock: Stock;
-  investmentAmount: number; // in KRW or USD
+  investmentAmount: number; // KRW
   riskLevel: RiskLevel;
-  targetProfitPercent: number; // e.g. 4.5%
-  stopLossPercent: number; // e.g. 2.5%
+  targetProfitPercent: number; // per-position, e.g. 4.5%
+  stopLossPercent: number; // per-position, e.g. 2.5%
   autoTradingEnabled: boolean;
   maxTradesPerDay: number;
+  maxConcurrentPositions: number; // 3-5
+}
+
+/** One currently-held stock in the AI's portfolio. */
+export interface Position {
+  symbol: string;
+  name: string;
+  market: Market;
+  currency: 'KRW' | 'USD';
+  quantity: number;
+  avgBuyPriceNative: number;
+  avgBuyPriceKrw: number;
+  openedAt: string;
 }
 
 export interface TradeOrder {
   id: string;
   timestamp: string;
   type: 'BUY' | 'SELL';
+  symbol: string;
   stockName: string;
-  price: number;
+  market: Market;
+  price: number; // KRW
   quantity: number;
   totalAmount: number;
   profitPercent?: number;
   reason: string;
-  aiConfidence: number; // e.g., 92%
+  aiConfidence: number;
 }
 
 export interface ChartPoint {
   time: string;
   price: number;
-  ma5?: number;
-  ma20?: number;
-  buySignal?: boolean;
-  sellSignal?: boolean;
+  sma5?: number | null;
+  sma20?: number | null;
+  sma60?: number | null;
+  rsi14?: number | null;
+  goldenCross?: boolean;
+  deadCross?: boolean;
+}
+
+export type CrossType = 'golden' | 'dead' | null;
+
+export interface TradingSignal {
+  action: 'BUY' | 'SELL' | 'HOLD';
+  confidence: number;
+  reason: string;
+  cross: CrossType;
+}
+
+export interface StockAnalysisResponse {
+  symbol: string;
+  yahooSymbol: string;
+  currency: 'KRW' | 'USD';
+  price: number;
+  nativePrice: number;
+  nativeCurrency: string;
+  fxRateUsedKrw: number | null;
+  previousClose: number;
+  changePercent: number;
+  asOf: string;
+  isLive: boolean;
+  history: ChartPoint[];
+  signal: TradingSignal;
+}
+
+/** A symbol the scanner currently likes, shown in the watchlist panel for transparency. */
+export interface WatchlistCandidate {
+  symbol: string;
+  name: string;
+  market: Market;
+  currency: 'KRW' | 'USD';
+  action: 'BUY' | 'SELL' | 'HOLD';
+  confidence: number;
+  reason: string;
+  scannedAt: string;
 }
 
 export interface PortfolioState {
   initialCapital: number;
-  cashBalance: number;
-  holdingQuantity: number;
-  avgBuyPrice: number;
+  cashBalance: number; // KRW, unified across markets
+  positions: Position[];
   currentValuation: number;
   totalPnL: number;
   totalPnLPercent: number;
@@ -56,31 +100,21 @@ export interface PortfolioState {
   lossCount: number;
 }
 
-export interface AiStockAnalysis {
-  stockName: string;
-  summary: string;
-  fatherFriendlyAdvice: string;
-  marketTrend: '상승 추세 📈' | '보합세 ⚖️' | '조정 장세 📉';
-  recommendedTargetProfit: number;
-  recommendedStopLoss: number;
-  keyBuySignals: string[];
-  riskFactor: string;
-}
-
-export interface AiTradeDecision {
-  action: 'BUY' | 'SELL' | 'HOLD';
-  quantity: number;
-  confidence: number;
-  reason: string;
-  fatherExplanation: string;
-}
-
-export interface DailyReport {
-  date: string;
-  stockName: string;
-  todayReturnPercent: number;
-  todayReturnAmount: number;
-  totalTrades: number;
-  summaryText: string;
-  aiFatherLetter: string;
+/**
+ * Server-persisted (Netlify Blobs) paper-trading session. A scheduled
+ * function advances this every few minutes independent of any open browser
+ * tab; the dashboard just polls and displays it.
+ */
+export interface TradingSession {
+  config: TradingConfig;
+  portfolio: PortfolioState;
+  tradeOrders: TradeOrder[];
+  watchlist: WatchlistCandidate[];
+  latestAiMessage: string;
+  isPaused: boolean;
+  isActive: boolean;
+  lastTradeDate: string;
+  createdAt: string;
+  lastTickAt: string | null;
+  lastError: string | null;
 }

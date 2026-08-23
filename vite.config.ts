@@ -1,11 +1,14 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import netlify from '@netlify/vite-plugin';
 import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    // netlify() emulates Functions/Blobs locally when running `netlify dev`
+    // (recommended for this project) — it's a no-op under plain `vite dev`.
+    plugins: [react(), tailwindcss(), netlify()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
