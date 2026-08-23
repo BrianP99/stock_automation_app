@@ -51,6 +51,8 @@ export default async () => {
         name: r.u.name,
         market: r.u.market,
         currency: r.u.currency,
+        sector: r.u.sector,
+        description: r.u.description,
         action: r.signal!.action,
         confidence: r.signal!.confidence,
         reason: r.signal!.reason,
@@ -81,7 +83,7 @@ export default async () => {
           const analysis = await getStockAnalysis(c.symbol);
           // Re-confirm with fresh intraday data — the screening pass only saw daily bars.
           if (analysis.signal.action !== 'BUY') return null;
-          return { symbol: c.symbol, name: c.name, market: c.market, analysis };
+          return { symbol: c.symbol, name: c.name, market: c.market, sector: c.sector, description: c.description, analysis };
         } catch {
           return null;
         }

@@ -1,5 +1,6 @@
 import React from 'react';
 import { WatchlistCandidate } from '../types';
+import { marketFlag } from '../lib/market';
 import { Eye } from 'lucide-react';
 
 interface WatchlistPanelProps {
@@ -29,11 +30,15 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ watchlist, heldS
             <div key={c.symbol} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600">
-                    {c.market === 'KRX' ? '국내' : '미국'}
-                  </span>
+                  <span className="text-sm leading-none">{marketFlag(c.market)}</span>
                   <span className="font-bold text-slate-900 text-sm truncate">{c.name}</span>
+                  {c.sector && (
+                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600 shrink-0">
+                      {c.sector}
+                    </span>
+                  )}
                 </div>
+                {c.description && <p className="text-[11px] text-slate-500 mt-0.5 truncate">{c.description}</p>}
                 <p className="text-[11px] text-slate-500 mt-0.5 truncate">{c.reason}</p>
               </div>
               <span className="text-xs font-black text-emerald-600 shrink-0">{c.confidence}%</span>

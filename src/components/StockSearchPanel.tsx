@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { StockAnalysisResponse } from '../types';
 import { StockChart } from './StockChart';
+import { marketFlag } from '../lib/market';
 import { Search, X } from 'lucide-react';
 
 interface UniverseSymbol {
@@ -8,6 +9,8 @@ interface UniverseSymbol {
   name: string;
   market: 'KRX' | 'US';
   currency: 'KRW' | 'USD';
+  sector: string;
+  description: string;
 }
 
 /** Pure research/view feature — no buy/sell button. Trading stays 100% AI-decided. */
@@ -71,13 +74,19 @@ export const StockSearchPanel: React.FC = () => {
                 <button
                   key={r.symbol}
                   onClick={() => handleSelect(r)}
-                  className="w-full text-left p-2.5 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200 flex items-center gap-2"
+                  className="w-full text-left p-2.5 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200"
                 >
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
-                    {r.market === 'KRX' ? '국내' : '미국'}
-                  </span>
-                  <span className="font-semibold text-sm text-slate-800">{r.name}</span>
-                  <span className="text-xs text-slate-400 font-mono">{r.symbol}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm leading-none">{marketFlag(r.market)}</span>
+                    <span className="font-semibold text-sm text-slate-800">{r.name}</span>
+                    <span className="text-xs text-slate-400 font-mono">{r.symbol}</span>
+                    {r.sector && (
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">
+                        {r.sector}
+                      </span>
+                    )}
+                  </div>
+                  {r.description && <p className="text-[11px] text-slate-500 mt-0.5 truncate">{r.description}</p>}
                 </button>
               ))}
             </div>
@@ -86,7 +95,16 @@ export const StockSearchPanel: React.FC = () => {
         </>
       ) : (
         <div>
-          <h5 className="font-bold text-slate-900 mb-2">{selected.name} ({selected.symbol})</h5>
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="text-sm leading-none">{marketFlag(selected.market)}</span>
+            <h5 className="font-bold text-slate-900">
+              {selected.name} ({selected.symbol})
+            </h5>
+            {selected.sector && (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-600">{selected.sector}</span>
+            )}
+          </div>
+          {selected.description && <p className="text-xs text-slate-500 mb-2">{selected.description}</p>}
           {isLoading ? (
             <div className="py-12 text-center">
               <div className="inline-block w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
