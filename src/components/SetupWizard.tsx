@@ -110,9 +110,9 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
                   setInvestmentAmount(Number(digitsOnly) || 0);
                 }}
                 onBlur={() => setInvestmentAmount((v) => Math.max(100000, v))}
-                className="w-full text-right font-black text-xl text-emerald-700 bg-white border border-slate-300 rounded-xl py-2 px-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                className="w-full text-right font-black text-xl text-emerald-700 bg-white border border-slate-300 rounded-xl py-2 pl-3 pr-10 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
               />
-              <span className="absolute right-3 top-2.5 text-sm font-bold text-slate-500 pointer-events-none">원</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 pointer-events-none">원</span>
             </div>
           </div>
         </div>
