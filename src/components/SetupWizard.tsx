@@ -50,7 +50,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
   };
 
   return (
-    <div className={`max-w-3xl mx-auto px-4 py-6 ${fontSizeClass}`}>
+    <div className={`max-w-6xl mx-auto px-4 py-6 ${fontSizeClass}`}>
       {/* Welcome Banner */}
       <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-3xl p-6 sm:p-8 text-white border border-slate-700 shadow-xl mb-8 relative overflow-hidden">
         <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
@@ -70,7 +70,11 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
         </div>
       </div>
 
-      <div className="space-y-8">
+      {/* Below lg: single narrow column (phone/tablet). At lg+: form column + a
+          right rail that fills the space a fixed-width form would otherwise
+          leave empty on wide desktop screens. */}
+      <div className="lg:grid lg:grid-cols-[1fr_340px] lg:gap-8 lg:items-start">
+      <div className="max-w-3xl space-y-8">
         {/* STEP 1: Investment Amount */}
         <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">
           <div className="flex items-center space-x-3 mb-6">
@@ -210,6 +214,48 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
             * 서버에서 5분마다 자동으로 매매를 확인하며, 언제든지 일시정지 및 전량 매도 후 원금 회수가 가능합니다.
           </p>
         </div>
+      </div>
+
+      {/* Desktop-only right rail — hidden below lg so phones/tablets are unaffected. */}
+      <aside className="hidden lg:flex lg:flex-col lg:sticky lg:top-6 gap-4">
+        <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl">
+          <div className="flex items-center gap-2 mb-4">
+            <Sparkles className="w-5 h-5 text-emerald-400" />
+            <h4 className="font-bold text-lg">AI 스캔 시스템</h4>
+          </div>
+          <dl className="space-y-4 text-sm">
+            <div>
+              <dt className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">감시 대상</dt>
+              <dd className="text-slate-200 leading-relaxed">
+                코스피·코스닥 대장주 + 나스닥·S&P500 대장주, 약 200개 종목 (단일 종목·비레버리지)
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">판단 지표</dt>
+              <dd className="text-slate-200 leading-relaxed">5·20일 이동평균선, RSI(14), 골든크로스·데드크로스</dd>
+            </div>
+            <div>
+              <dt className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">스캔 주기</dt>
+              <dd className="text-slate-200 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                5분마다 전체 재스캔
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
+          <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-emerald-600" />
+            안전장치
+          </h4>
+          <ul className="space-y-2 text-sm text-slate-600">
+            <li>· 종목별 개별 손절/익절 (전체 포트폴리오 손익 아님)</li>
+            <li>· 일일 최대 매매 횟수 제한</li>
+            <li>· 언제든 일시정지 / 특정 종목 긴급 매도</li>
+          </ul>
+        </div>
+      </aside>
       </div>
     </div>
   );
