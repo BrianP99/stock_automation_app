@@ -88,7 +88,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
               <button
                 key={preset.value}
                 onClick={() => setInvestmentAmount(preset.value)}
-                className={`py-3 px-4 rounded-2xl font-bold text-center border-2 transition-all ${
+                className={`py-3 px-4 rounded-2xl font-bold text-center border-2 whitespace-nowrap break-keep transition-all ${
                   investmentAmount === preset.value
                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg shadow-emerald-600/20 scale-105'
                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
