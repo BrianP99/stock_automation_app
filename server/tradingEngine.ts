@@ -22,6 +22,8 @@ export interface CandidateAnalysis {
   symbol: string;
   name: string;
   market: Market;
+  sector: string;
+  description: string;
   analysis: StockAnalysis;
 }
 
@@ -81,6 +83,8 @@ function openPosition(
   symbol: string,
   name: string,
   market: Market,
+  sector: string,
+  description: string,
   currency: 'KRW' | 'USD',
   priceNative: number,
   priceKrw: number,
@@ -95,6 +99,8 @@ function openPosition(
     symbol,
     name,
     market,
+    sector,
+    description,
     currency,
     quantity: qty,
     avgBuyPriceNative: priceNative,
@@ -201,6 +207,8 @@ export function runPortfolioTick(
       candidate.symbol,
       candidate.name,
       candidate.market,
+      candidate.sector,
+      candidate.description,
       candidate.analysis.currency,
       candidate.analysis.nativePrice,
       candidate.analysis.price,

@@ -19,6 +19,8 @@ export interface Position {
   name: string;
   market: Market;
   currency: 'KRW' | 'USD';
+  sector: string;
+  description: string;
   quantity: number;
   avgBuyPriceNative: number;
   avgBuyPriceKrw: number;
@@ -82,6 +84,8 @@ export interface WatchlistCandidate {
   name: string;
   market: Market;
   currency: 'KRW' | 'USD';
+  sector: string;
+  description: string;
   action: 'BUY' | 'SELL' | 'HOLD';
   confidence: number;
   reason: string;

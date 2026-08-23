@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Position, StockAnalysisResponse } from '../types';
 import { StockChart } from './StockChart';
+import { marketFlag } from '../lib/market';
 import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, ShieldAlert } from 'lucide-react';
 
 interface HoldingsPanelProps {
@@ -60,13 +61,19 @@ export const HoldingsPanel: React.FC<HoldingsPanelProps> = ({ positions, onSellP
             <div className="p-5 flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                    {position.market === 'KRX' ? '국내' : '미국'}
+                  <span className="text-base leading-none" title={position.market === 'KRX' ? '국내' : '미국'}>
+                    {marketFlag(position.market)}
                   </span>
                   <h4 className="text-lg font-extrabold text-slate-900">{position.name}</h4>
                   <span className="text-xs text-slate-400 font-mono">{position.symbol}</span>
+                  {position.sector && (
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                      {position.sector}
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-slate-500 mt-1">
+                {position.description && <p className="text-xs text-slate-500 mt-1">{position.description}</p>}
+                <p className="text-xs text-slate-500 mt-0.5">
                   {position.quantity}주 보유 · 평단가 {Math.round(position.avgBuyPriceKrw).toLocaleString()}원
                 </p>
               </div>
