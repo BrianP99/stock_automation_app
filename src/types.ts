@@ -18,6 +18,7 @@ export interface Position {
   symbol: string;
   name: string;
   market: Market;
+  exchange: string;
   currency: 'KRW' | 'USD';
   sector: string;
   description: string;
@@ -65,6 +66,7 @@ export interface TradingSignal {
 export interface StockAnalysisResponse {
   symbol: string;
   yahooSymbol: string;
+  exchange: string;
   currency: 'KRW' | 'USD';
   price: number;
   nativePrice: number;
@@ -83,6 +85,7 @@ export interface WatchlistCandidate {
   symbol: string;
   name: string;
   market: Market;
+  exchange: string;
   currency: 'KRW' | 'USD';
   sector: string;
   description: string;

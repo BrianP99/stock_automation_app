@@ -17,6 +17,17 @@ interface ParsedChart {
   close: number[];
   currency: string;
   previousClose: number | null;
+  exchange: string;
+}
+
+/** Normalizes Yahoo's raw exchange codes/names into a short Korean display label. */
+function normalizeExchange(fullExchangeName?: string, exchangeName?: string): string {
+  const key = (fullExchangeName || exchangeName || '').toUpperCase();
+  if (key.includes('KOSDAQ') || key === 'KOE') return '코스닥';
+  if (key === 'KSE' || key === 'KSC' || key.includes('KOSPI')) return '코스피';
+  if (key.includes('NASDAQ') || ['NMS', 'NGM', 'NCM'].includes(key)) return '나스닥';
+  if (key.includes('NYSE') || key === 'NYQ' || key === 'ASE') return 'NYSE';
+  return fullExchangeName || exchangeName || '';
 }
 
 async function fetchChartRaw(yahooSymbol: string, range: string, interval: string): Promise<any> {
@@ -57,6 +68,7 @@ function parseChart(raw: any): ParsedChart {
     close,
     currency: raw.meta?.currency || 'USD',
     previousClose: raw.meta?.chartPreviousClose ?? raw.meta?.previousClose ?? null,
+    exchange: normalizeExchange(raw.meta?.fullExchangeName, raw.meta?.exchangeName),
   };
 }
 
@@ -146,6 +158,7 @@ export interface Candle {
 export interface StockAnalysis {
   symbol: string;
   yahooSymbol: string;
+  exchange: string;
   currency: 'KRW' | 'USD';
   price: number; // always converted to KRW for consistent in-app portfolio math
   nativePrice: number;
@@ -234,6 +247,7 @@ export async function getStockAnalysis(symbol: string): Promise<StockAnalysis> {
   return {
     symbol,
     yahooSymbol: toYahooSymbol(symbol),
+    exchange: daily.exchange,
     currency,
     price: Math.round(nativePrice * fxRate),
     nativePrice,
@@ -250,6 +264,7 @@ export async function getStockAnalysis(symbol: string): Promise<StockAnalysis> {
 
 export interface ScreeningResult {
   symbol: string;
+  exchange: string;
   signal: TradingSignal;
 }
 
@@ -280,7 +295,7 @@ export async function getScreeningSignal(symbol: string): Promise<ScreeningResul
     prevSma20: sma20Series[n - 2] ?? null,
     rsi14: rsi14Series[n - 1],
   });
-  return { symbol, signal };
+  return { symbol, exchange: daily.exchange, signal };
 }
 
 export interface QuoteSummary {

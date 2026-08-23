@@ -34,6 +34,7 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ watchlist, heldS
                     className={`inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${marketBadgeClass(c.market)}`}
                   >
                     {marketLabel(c.market)}
+                    {c.exchange && ` (${c.exchange})`}
                   </span>
                   <span className="font-bold text-slate-900 text-sm truncate">{c.name}</span>
                   {c.sector && (
