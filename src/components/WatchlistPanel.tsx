@@ -1,6 +1,6 @@
 import React from 'react';
 import { WatchlistCandidate } from '../types';
-import { marketFlag } from '../lib/market';
+import { marketFlag, marketLabel, marketBadgeClass } from '../lib/market';
 import { Eye } from 'lucide-react';
 
 interface WatchlistPanelProps {
@@ -30,7 +30,12 @@ export const WatchlistPanel: React.FC<WatchlistPanelProps> = ({ watchlist, heldS
             <div key={c.symbol} className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm leading-none">{marketFlag(c.market)}</span>
+                  <span
+                    className={`inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${marketBadgeClass(c.market)}`}
+                  >
+                    <span className="leading-none">{marketFlag(c.market)}</span>
+                    {marketLabel(c.market)}
+                  </span>
                   <span className="font-bold text-slate-900 text-sm truncate">{c.name}</span>
                   {c.sector && (
                     <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-600 shrink-0">
