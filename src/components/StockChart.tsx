@@ -47,13 +47,13 @@ export const StockChart: React.FC<StockChartProps> = ({ data, avgBuyPrice, heigh
           <YAxis
             domain={['auto', 'auto']}
             tick={{ fontSize: 11, fill: '#64748b' }}
-            tickFormatter={(val) => `${val.toLocaleString()}`}
+            tickFormatter={(val) => `${val.toLocaleString('ko-KR')}`}
             width={60}
           />
           <Tooltip
             labelFormatter={(val) => new Date(val).toLocaleString('ko-KR')}
             formatter={(value: any, name: string) => [
-              `${Number(value).toLocaleString()}원`,
+              `${Number(value).toLocaleString('ko-KR')}원`,
               name === 'price' ? '주가' : name === 'sma5' ? '5일선' : name === 'sma20' ? '20일선' : name,
             ]}
             contentStyle={{
@@ -67,7 +67,7 @@ export const StockChart: React.FC<StockChartProps> = ({ data, avgBuyPrice, heigh
           {avgBuyPrice != null && (
             <ReferenceLine
               y={avgBuyPrice}
-              label={{ value: `평단가: ${avgBuyPrice.toLocaleString()}원`, fill: '#ef4444', fontSize: 11, fontWeight: 'bold' }}
+              label={{ value: `평단가: ${avgBuyPrice.toLocaleString('ko-KR')}원`, fill: '#ef4444', fontSize: 11, fontWeight: 'bold' }}
               stroke="#ef4444"
               strokeDasharray="4 4"
             />

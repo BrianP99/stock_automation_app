@@ -1,4 +1,4 @@
-import { Type } from '@google/genai';
+﻿import { Type } from '@google/genai';
 
 // Shared Gemini prompt/schema/fallback builders, used by both the Express
 // server (server.ts, local dev / Cloud Run) and the Netlify functions
@@ -27,7 +27,7 @@ export function buildExplainSignalPrompt(
 - 확정된 판단: ${action}
 - AI 신뢰도: ${confidence}%
 - 기술적 사유: ${reason}
-- 현재가: ${Number(price).toLocaleString()}원
+- 현재가: ${Number(price).toLocaleString('ko-KR')}원
 
 응답 형식(JSON): { "explanation": "..." }
 `;
@@ -57,7 +57,7 @@ export function buildDailyBriefingPrompt(
   return `
 AI 주식 자동매매 '오늘의 일일 매매 보고서'를 작성해 주세요. 이 시스템은 사용자가 종목을 고르지 않고, AI가 시장을 스캔해 여러 종목을 자동으로 사고 파는 포트폴리오형 자동매매입니다.
 - 현재 보유 종목: ${holdingsLine}
-- 오늘 손익금액: ${Number(totalReturnAmount).toLocaleString()}원
+- 오늘 손익금액: ${Number(totalReturnAmount).toLocaleString('ko-KR')}원
 - 오늘 수익률: ${totalReturnPercent}%
 - 오늘 자동매매 횟수: ${tradesCount}회 (승률: ${winRate}%)
 
@@ -93,7 +93,7 @@ export function dailyBriefingFallback(
   const holdingsLine = heldStockNames.length ? heldStockNames.join(', ') : '현금 대기 중';
   return {
     title: '오늘의 AI 자동매매 리포트',
-    summaryText: `오늘 포트폴리오 매매로 ${Number(totalReturnAmount || 0).toLocaleString()}원 (${totalReturnPercent || 0}%)의 성과를 기록했습니다.`,
+    summaryText: `오늘 포트폴리오 매매로 ${Number(totalReturnAmount || 0).toLocaleString('ko-KR')}원 (${totalReturnPercent || 0}%)의 성과를 기록했습니다.`,
     summaryLetter: `오늘 자동매매가 안정적으로 진행되었습니다. 현재 보유 종목: ${holdingsLine}. AI가 실시간으로 여러 종목의 수급을 분석하여 안전한 구간에서 분할 매매를 진행했습니다. 자산의 안전을 최우선으로 관리합니다.`,
     tomorrowPreview: '내일도 장 개장과 함께 AI가 시장 전체를 스캔하여 최적의 종목과 타이밍으로 거래를 계속합니다.',
   };

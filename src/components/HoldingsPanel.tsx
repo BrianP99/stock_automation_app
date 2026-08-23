@@ -74,17 +74,17 @@ export const HoldingsPanel: React.FC<HoldingsPanelProps> = ({ positions, onSellP
                 </div>
                 {position.description && <p className="text-xs text-slate-500 mt-1">{position.description}</p>}
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {position.quantity}주 보유 · 평단가 {Math.round(position.avgBuyPriceKrw).toLocaleString()}원
+                  {position.quantity}주 보유 · 평단가 {Math.round(position.avgBuyPriceKrw).toLocaleString('ko-KR')}원
                 </p>
               </div>
 
               <div className="flex items-center gap-4">
                 <div className="text-right">
-                  <div className="text-lg font-black text-slate-900">{Math.round(currentPrice).toLocaleString()}원</div>
+                  <div className="text-lg font-black text-slate-900">{Math.round(currentPrice).toLocaleString('ko-KR')}원</div>
                   <div className={`text-xs font-bold flex items-center gap-1 justify-end ${isProfit ? 'text-red-600' : 'text-blue-600'}`}>
                     {isProfit ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
                     {isProfit ? '+' : ''}
-                    {Math.round(pnl).toLocaleString()}원 ({isProfit ? '+' : ''}
+                    {Math.round(pnl).toLocaleString('ko-KR')}원 ({isProfit ? '+' : ''}
                     {pnlPercent}%)
                   </div>
                 </div>

@@ -102,10 +102,14 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
             <span className="text-sm font-bold text-slate-700 shrink-0">직접 입력 금액</span>
             <div className="relative flex-1 max-w-xs">
               <input
-                type="number"
-                step="100000"
-                value={investmentAmount}
-                onChange={(e) => setInvestmentAmount(Math.max(100000, Number(e.target.value)))}
+                type="text"
+                inputMode="numeric"
+                value={investmentAmount.toLocaleString('ko-KR')}
+                onChange={(e) => {
+                  const digitsOnly = e.target.value.replace(/[^0-9]/g, '');
+                  setInvestmentAmount(Number(digitsOnly) || 0);
+                }}
+                onBlur={() => setInvestmentAmount((v) => Math.max(100000, v))}
                 className="w-full text-right font-black text-xl text-emerald-700 bg-white border border-slate-300 rounded-xl py-2 px-3 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
               />
               <span className="absolute right-3 top-2.5 text-sm font-bold text-slate-500 pointer-events-none">원</span>
@@ -205,7 +209,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
             ) : (
               <>
                 <Play className="w-7 h-7 fill-slate-950" />
-                <span>{investmentAmount.toLocaleString()}원 AI 완전 자동매매 시작하기</span>
+                <span>{investmentAmount.toLocaleString('ko-KR')}원 AI 완전 자동매매 시작하기</span>
                 <ArrowRight className="w-6 h-6" />
               </>
             )}

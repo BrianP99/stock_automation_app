@@ -102,7 +102,7 @@ export const AiBriefingModal: React.FC<AiBriefingModalProps> = ({ isOpen, onClos
                 <span className="text-xs text-slate-400 font-medium">오늘 손익</span>
                 <div className={`text-base font-bold mt-0.5 ${(portfolio?.totalPnL || 0) >= 0 ? 'text-red-400' : 'text-blue-400'}`}>
                   {(portfolio?.totalPnL || 0) >= 0 ? '+' : ''}
-                  {Math.round(portfolio?.totalPnL || 0).toLocaleString()}원 ({portfolio?.totalPnLPercent || 0}%)
+                  {Math.round(portfolio?.totalPnL || 0).toLocaleString('ko-KR')}원 ({portfolio?.totalPnLPercent || 0}%)
                 </div>
               </div>
               <div className="col-span-2 sm:col-span-1">
