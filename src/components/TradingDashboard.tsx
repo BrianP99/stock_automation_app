@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { TradingConfig, TradeOrder, TradingSession } from '../types';
 import confetti from 'canvas-confetti';
 import {
@@ -167,7 +167,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
     try {
       const updated = await controlSession('exit');
       if (!updated.isActive) {
-        alert(`전량 매도 완료!\n최종 환원 금액: ${Math.round(updated.portfolio.cashBalance).toLocaleString()}원`);
+        alert(`전량 매도 완료!\n최종 환원 금액: ${Math.round(updated.portfolio.cashBalance).toLocaleString('ko-KR')}원`);
         onResetSetup();
       } else {
         setSession(updated);
@@ -284,12 +284,12 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">총 평가 금액 (원금 + 수익)</div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-2">
-            {Math.round(portfolio.currentValuation).toLocaleString()}
+            {Math.round(portfolio.currentValuation).toLocaleString('ko-KR')}
             <span className="text-base font-bold text-slate-500 ml-1">원</span>
           </div>
           <div className="mt-3 text-xs font-semibold text-slate-500 flex items-center justify-between">
             <span>설정 투자금:</span>
-            <span className="font-bold text-slate-800">{config.investmentAmount.toLocaleString()}원</span>
+            <span className="font-bold text-slate-800">{config.investmentAmount.toLocaleString('ko-KR')}원</span>
           </div>
         </div>
 
@@ -304,7 +304,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
           </div>
           <div className={`text-2xl sm:text-3xl font-black mt-2 ${isProfit ? 'text-red-600' : 'text-blue-600'}`}>
             {isProfit ? '+' : ''}
-            {Math.round(portfolio.totalPnL).toLocaleString()}
+            {Math.round(portfolio.totalPnL).toLocaleString('ko-KR')}
             <span className="text-base font-bold ml-1">원</span>
           </div>
           <div className="mt-3 flex items-center space-x-2 flex-wrap gap-y-1">
@@ -319,7 +319,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">예수금 (대기 현금)</div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-2">
-            {Math.round(portfolio.cashBalance).toLocaleString()}
+            {Math.round(portfolio.cashBalance).toLocaleString('ko-KR')}
             <span className="text-base font-bold text-slate-500 ml-1">원</span>
           </div>
           <div className="mt-3 text-xs text-slate-600 flex items-center justify-between font-semibold">
@@ -395,9 +395,9 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
                     </div>
                     <div className="flex items-baseline justify-between mt-2">
                       <span className="font-extrabold text-slate-900">
-                        {order.stockName} {order.quantity}주 @ {order.price.toLocaleString()}원
+                        {order.stockName} {order.quantity}주 @ {order.price.toLocaleString('ko-KR')}원
                       </span>
-                      <span className="text-xs font-bold text-slate-600">총 {order.totalAmount.toLocaleString()}원</span>
+                      <span className="text-xs font-bold text-slate-600">총 {order.totalAmount.toLocaleString('ko-KR')}원</span>
                     </div>
                     <p className="text-xs text-slate-600 mt-2 bg-white/80 p-2 rounded-xl border border-slate-200/60 font-medium">
                       💡 사유: {order.reason}

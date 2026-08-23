@@ -112,7 +112,7 @@ export const StockSearchPanel: React.FC = () => {
           ) : analysis ? (
             <>
               <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-xl font-black text-slate-900">{analysis.price.toLocaleString()}원</span>
+                <span className="text-xl font-black text-slate-900">{analysis.price.toLocaleString('ko-KR')}원</span>
                 <span className={`text-sm font-bold ${analysis.changePercent >= 0 ? 'text-red-500' : 'text-blue-500'}`}>
                   {analysis.changePercent >= 0 ? '+' : ''}
                   {analysis.changePercent}%

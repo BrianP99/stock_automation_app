@@ -56,7 +56,7 @@ export const SmsPreviewModal: React.FC<SmsPreviewModalProps> = ({ isOpen, onClos
             <p className="text-slate-700">
               AI 자동매매가 <strong className="text-amber-900">{stockName}</strong> {quantity}주를
               {isBuy ? ' 평균가 ' : ' 단가 '}
-              <strong className="text-amber-900">{price.toLocaleString()}원</strong>에 {isBuy ? '매수' : '매도'}하였습니다.
+              <strong className="text-amber-900">{price.toLocaleString('ko-KR')}원</strong>에 {isBuy ? '매수' : '매도'}하였습니다.
             </p>
             <div className="bg-amber-200/60 p-2 rounded-xl text-xs text-amber-950 font-medium">💡 체결 사유: {reason}</div>
           </div>
