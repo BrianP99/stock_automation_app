@@ -1,9 +1,11 @@
 // Curated trading universe for the autonomous scanner — deliberately NOT the
 // full exchange listing (thousands of obscure names). This is "대장주 +
 // 유망 변동성 종목" per product decision: well-known sector leaders across
-// KOSPI/KOSDAQ and S&P500/Nasdaq, plus popular high-beta growth names and
-// leveraged/inverse ETFs for a day-trading feel. Every symbol here is a real,
-// verified ticker — edit/expand this list freely; it's just data.
+// KOSPI/KOSDAQ and S&P500/Nasdaq, plus popular high-beta growth names.
+// Single-stock, non-leveraged only — no leveraged/inverse ETFs (too high-risk
+// to hold, and inverse products decay badly if the engine ever holds one
+// through a multi-day swing). Every symbol here is a real, verified ticker —
+// edit/expand this list freely; it's just data.
 
 export type Market = 'KRX' | 'US';
 
@@ -59,14 +61,6 @@ const KRX_GROWTH: UniverseSymbol[] = [
   krx('347860', '알체라'), krx('225570', '넥슨게임즈'), krx('036830', '솔브레인홀딩스'),
 ];
 
-// Leveraged/inverse ETFs — the "롱숏 상품" for a day-trading feel.
-const KRX_LEVERAGED_ETFS: UniverseSymbol[] = [
-  krx('122630', 'KODEX 레버리지'), krx('252670', 'KODEX 200선물인버스2X'),
-  krx('233740', 'KODEX 코스닥150레버리지'), krx('251340', 'KODEX 코스닥150선물인버스'),
-  krx('114800', 'KODEX 인버스'), krx('069500', 'KODEX 200'),
-  krx('091160', 'KODEX 반도체'), krx('091170', 'KODEX 은행'),
-];
-
 // --- US: S&P500/Nasdaq leaders + popular growth/momentum names -------------
 const US_LEADERS: UniverseSymbol[] = [
   us('AAPL', 'Apple'), us('MSFT', 'Microsoft'), us('GOOGL', 'Alphabet A'), us('GOOG', 'Alphabet C'),
@@ -109,25 +103,9 @@ const US_GROWTH: UniverseSymbol[] = [
   us('APP', 'AppLovin'), us('DUOL', 'Duolingo'), us('CELH', 'Celsius Holdings'), us('ONON', 'On Holding'),
 ];
 
-// Leveraged/inverse ETFs — the "롱숏 상품" for a day-trading feel.
-const US_LEVERAGED_ETFS: UniverseSymbol[] = [
-  us('TQQQ', 'ProShares UltraPro QQQ'), us('SQQQ', 'ProShares UltraPro Short QQQ'),
-  us('SOXL', 'Direxion Daily Semiconductor Bull 3X'), us('SOXS', 'Direxion Daily Semiconductor Bear 3X'),
-  us('SPXL', 'Direxion Daily S&P 500 Bull 3X'), us('SPXS', 'Direxion Daily S&P 500 Bear 3X'),
-  us('UPRO', 'ProShares UltraPro S&P500'), us('SPXU', 'ProShares UltraPro Short S&P500'),
-  us('TNA', 'Direxion Small Cap Bull 3X'), us('TZA', 'Direxion Small Cap Bear 3X'),
-  us('LABU', 'Direxion Biotech Bull 3X'), us('LABD', 'Direxion Biotech Bear 3X'),
-  us('FAS', 'Direxion Financial Bull 3X'), us('FAZ', 'Direxion Financial Bear 3X'),
-  us('TECL', 'Direxion Technology Bull 3X'), us('TECS', 'Direxion Technology Bear 3X'),
-  us('YINN', 'Direxion China Bull 3X'), us('YANG', 'Direxion China Bear 3X'),
-  us('NUGT', 'Direxion Gold Miners Bull 2X'), us('DUST', 'Direxion Gold Miners Bear 2X'),
-];
-
 export const TRADING_UNIVERSE: UniverseSymbol[] = [
   ...KRX_LEADERS,
   ...US_LEADERS,
   ...KRX_GROWTH,
   ...US_GROWTH,
-  ...KRX_LEVERAGED_ETFS,
-  ...US_LEVERAGED_ETFS,
 ];
