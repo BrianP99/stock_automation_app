@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Position, StockAnalysisResponse } from '../types';
 import { StockChart } from './StockChart';
-import { marketFlag, marketLabel, marketBadgeClass } from '../lib/market';
+import { marketLabel, marketBadgeClass } from '../lib/market';
 import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, ShieldAlert } from 'lucide-react';
 
 interface HoldingsPanelProps {
@@ -64,7 +64,6 @@ export const HoldingsPanel: React.FC<HoldingsPanelProps> = ({ positions, onSellP
                   <span
                     className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border ${marketBadgeClass(position.market)}`}
                   >
-                    <span className="leading-none">{marketFlag(position.market)}</span>
                     {marketLabel(position.market)}
                   </span>
                   <h4 className="text-lg font-extrabold text-slate-900">{position.name}</h4>

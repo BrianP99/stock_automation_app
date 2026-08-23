@@ -1,12 +1,5 @@
 import { Market } from '../types';
 
-// Windows doesn't ship flag glyphs for regional-indicator emoji (renders as
-// plain "KR"/"US" text instead of a flag icon), so the flag alone isn't a
-// reliable visual cue cross-platform — pair it with a colored, labeled badge.
-export function marketFlag(market: Market): string {
-  return market === 'KRX' ? '🇰🇷' : '🇺🇸';
-}
-
 export function marketLabel(market: Market): string {
   return market === 'KRX' ? '한국' : '미국';
 }

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { StockAnalysisResponse } from '../types';
 import { StockChart } from './StockChart';
-import { marketFlag, marketLabel, marketBadgeClass } from '../lib/market';
+import { marketLabel, marketBadgeClass } from '../lib/market';
 import { Search, X } from 'lucide-react';
 
 interface UniverseSymbol {
@@ -80,7 +80,6 @@ export const StockSearchPanel: React.FC = () => {
                     <span
                       className={`inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${marketBadgeClass(r.market)}`}
                     >
-                      <span className="leading-none">{marketFlag(r.market)}</span>
                       {marketLabel(r.market)}
                     </span>
                     <span className="font-semibold text-sm text-slate-800">{r.name}</span>
@@ -104,7 +103,6 @@ export const StockSearchPanel: React.FC = () => {
             <span
               className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border ${marketBadgeClass(selected.market)}`}
             >
-              <span className="leading-none">{marketFlag(selected.market)}</span>
               {marketLabel(selected.market)}
             </span>
             <h5 className="font-bold text-slate-900">
