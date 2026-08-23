@@ -227,7 +227,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
             <div>
               <dt className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">감시 대상</dt>
               <dd className="text-slate-200 leading-relaxed">
-                코스피·코스닥 대장주 + 나스닥·S&P500 대장주 + 레버리지/인버스 ETF, 약 200개 종목
+                코스피·코스닥 대장주 + 나스닥·S&P500 대장주, 약 200개 종목 (단일 종목·비레버리지)
               </dd>
             </div>
             <div>
