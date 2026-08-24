@@ -9,6 +9,20 @@ function getWebhookUrl(): string | undefined {
   return netlifyEnv?.get?.('DISCORD_WEBHOOK_URL') || process.env.DISCORD_WEBHOOK_URL;
 }
 
+/** TEMP diagnostic (no secret values exposed) — remove once the env var lookup is confirmed working. */
+export function debugWebhookEnv(): string {
+  const netlifyEnv = (globalThis as any).Netlify?.env;
+  const g = globalThis as any;
+  return JSON.stringify({
+    hasNetlifyGlobal: !!g.Netlify,
+    hasNetlifyEnv: !!netlifyEnv,
+    envGetType: typeof netlifyEnv?.get,
+    fromNetlifyPresent: !!netlifyEnv?.get?.('DISCORD_WEBHOOK_URL'),
+    fromProcessEnvPresent: !!process.env.DISCORD_WEBHOOK_URL,
+    processEnvKeysContainingDiscord: Object.keys(process.env).filter((k) => k.includes('DISCORD')),
+  });
+}
+
 export interface DiscordNotifyResult {
   ok: boolean;
   status?: number;
