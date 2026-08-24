@@ -34,12 +34,17 @@ export async function notifyDiscordTrade(order: TradeOrder): Promise<void> {
   };
 
   try {
-    await fetch(webhookUrl, {
+    const res = await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ username: 'AI 주식매매 알림봇', embeds: [embed] }),
       signal: AbortSignal.timeout(5000),
     });
+    // fetch() doesn't throw on 4xx/5xx — a bad/deleted webhook or malformed
+    // payload would silently look like success without checking res.ok.
+    if (!res.ok) {
+      console.error(`Discord webhook responded ${res.status}: ${await res.text().catch(() => '')}`);
+    }
   } catch (err) {
     console.error('Discord notification failed:', err);
   }
