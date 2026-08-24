@@ -3,7 +3,26 @@
 버그/장애가 발생했을 때 **날짜, 증상, 근본 원인, 해결 방법**을 기록하는 문서입니다.
 새 이슈를 진단·해결할 때마다 최상단에 새 항목을 추가하세요 (최신순 정렬).
 
-이 파일은 `docs/` 아래에 있어서 `netlify.toml`의 `ignore` 설정에 의해 **이 파일만 수정해도 Netlify 배포는 발생하지 않습니다** (배포 크레딧 절약).
+(과거에 이 문서만 수정해도 배포가 스킵되게 하는 `netlify.toml` `ignore` 규칙을 넣었었는데, 실제로는 모든 배포를 무조건 스킵시키는 버그였음이 드러나 되돌렸습니다 — 아래 2026-08-24 항목 참고. 지금은 이 문서를 고쳐도 다른 push와 동일하게 배포가 발생합니다.)
+
+---
+
+## 2026-08-24 — `netlify.toml`의 docs-only `ignore` 규칙이 모든 배포를 스킵시킴
+
+**증상:** `docs/`나 `*.md` 파일만 바뀌면 Netlify 배포를 건너뛰게 하려고 아래 규칙을 넣었는데(PR #19),
+```toml
+ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':!docs' ':!*.md'"
+```
+그 이후 머지된 PR #20(`package.json`에 netlify-cli 추가), #21(`netlify.toml`에 `[dev]` 섹션 추가), #22(문서 수정) **전부 다** `"Failed during stage 'checking build content for changes': Canceled build due to no content change"`로 스킵됨. #20/#21은 docs가 아닌 실제 설정 파일 변경인데도 스킵된 게 이상 신호.
+
+**근본 원인:** 직전의 "정상" 배포가 GitHub push가 아니라 **CLI(`netlify deploy` 업로드) 수동 배포**였음(`commit_ref: null`, "Deploy triggered by upload"). `ignore` 스크립트가 참조하는 `$CACHED_COMMIT_REF`가 유효한 git 커밋이 아니게 되면서, `git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ...`가 실제 변경 내용과 무관하게 계속 "차이 없음(exit 0)"으로 평가되어 이후 모든 git 기반 배포가 무조건 스킵됨. `netlify api listSiteDeploys`로 배포 이력을 직접 조회해서 발견함 (Netlify 대시보드 UI만 봐서는 "빌드가 아예 안 잡힘"처럼 보여서 원인 파악이 어려웠음).
+
+**해결:** `ignore` 규칙을 완전히 제거 (PR #23). 제거 직후 push에서 정상적으로 `state: ready`로 배포되는 것을 확인함.
+
+**교훈 / 재발 방지:**
+- CLI 수동 업로드 배포(`netlify deploy`, `deploy-site`)를 한 번이라도 쓰면 그 다음부터 git 기반 `ignore`/`$CACHED_COMMIT_REF` 비교가 깨질 수 있다 — 수동 배포는 정말 필요할 때만, 그리고 가능하면 바로 다음에 정상적인 git push 배포로 baseline을 복구할 것.
+- `ignore` 규칙처럼 "빌드를 스킵시키는" 설정을 넣을 땐, 넣은 직후 **실제 코드 변경이 있는 커밋을 push해서 스킵되지 않고 정상 빌드되는지** 반드시 확인해야 함. "문서만 바뀌면 스킵되는지"만 확인하고 "코드가 바뀌면 스킵 안 되는지"를 확인 안 한 게 이번 실수.
+- Netlify 대시보드에서 안 보이는 배포 이력은 `netlify api listSiteDeploys --data '{"site_id":"...","per_page":N}'`로 직접 조회하면 `error_message`까지 정확히 나옴 — 진단에 유용.
 
 ---
 
