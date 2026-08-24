@@ -7,6 +7,24 @@
 
 ---
 
+## 2026-08-24 — `netlify dev`가 5173 포트 타임아웃으로 시작 실패
+
+**증상:** `npm run netlify:dev` 실행 시 "Waiting for framework dev server to be ready on port 5173" 상태로 멈췄다가 `Timed out waiting for port '5173' to be open` 에러로 종료됨.
+
+**근본 원인:** `netlify.toml`에 `[dev]` 섹션이 없어서, `netlify dev`가 dev 서버 실행 명령을 알 수 없었고 `[build].command`(프로덕션 빌드 명령 `npm run build:client`)를 그대로 dev 명령으로 재사용함. 이 명령은 빌드 후 바로 종료되는 일회성 스크립트라 5173 포트를 절대 열지 않음.
+
+**해결:** `netlify.toml`에 아래 추가:
+```toml
+[dev]
+  command = "npx vite"
+  targetPort = 5173
+```
+`@netlify/vite-plugin`이 이미 vite.config.ts에 설정되어 있어서, 이렇게 하면 `netlify dev`가 진짜 Vite dev 서버(HMR 포함)를 띄우고 그 안에서 Functions/Blobs를 에뮬레이트함. PR #21.
+
+**확인:** `DISCORD_WEBHOOK_URL`이 정상 주입됨(로그에 `Injected project settings env vars: DISCORD_WEBHOOK_URL` 출력 확인), `/api/session/state`가 로컬 Functions 파이프라인을 통해 정상 응답.
+
+---
+
 ## 2026-08-24 — Discord 웹훅 알림이 전송되지 않음
 
 **증상:** 매수/매도 체결, "지금 포트폴리오 요약 보내기" 버튼을 눌러도 Discord 채널에 메시지가 오지 않음. 알림 로그에는 `DISCORD_WEBHOOK_URL이 설정되지 않았습니다` 에러만 계속 쌓임.
