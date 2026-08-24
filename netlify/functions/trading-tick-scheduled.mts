@@ -108,6 +108,18 @@ export default async () => {
     if (result.orders.length) {
       session.tradeOrders = [...result.orders.reverse(), ...session.tradeOrders];
       session.latestAiMessage = result.orders[result.orders.length - 1].reason;
+
+      const notifyResults = await notifyDiscordTrades(result.orders);
+      const logEntries = notifyResults.map(({ order, result: notifyResult }) => ({
+        id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: new Date().toISOString(),
+        kind: 'trade' as const,
+        title: `${order.type === 'BUY' ? '매수' : '매도'} 체결 — ${order.stockName}`,
+        detail: `${order.quantity}주 @ ${Math.round(order.price).toLocaleString('ko-KR')}원`,
+        ok: notifyResult.ok,
+        ...(notifyResult.ok ? {} : { error: notifyResult.error || `HTTP ${notifyResult.status}` }),
+      }));
+      session.notificationLog = [...logEntries, ...(session.notificationLog || [])];
     } else if (session.portfolio.positions.length === 0) {
       session.latestAiMessage = '현재 매수 조건을 만족하는 종목을 계속 탐색 중입니다.';
     } else {
@@ -115,7 +127,6 @@ export default async () => {
     }
 
     await saveCurrentSession(session);
-    if (result.orders.length) await notifyDiscordTrades(result.orders);
   } catch (err) {
     // A blocked/failed market-data fetch shouldn't crash the schedule — just
     // record it so the dashboard can surface "last successful update" info.

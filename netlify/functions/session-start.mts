@@ -40,6 +40,7 @@ export default async (req: Request) => {
     },
     tradeOrders: [],
     watchlist: [],
+    notificationLog: [],
     latestAiMessage: 'AI 자동매매를 시작했습니다. 시장을 스캔하여 매매 조건을 만족하는 종목을 찾는 중입니다.',
     isPaused: false,
     isActive: true,

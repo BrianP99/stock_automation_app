@@ -371,7 +371,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
                   onClick={onOpenSmsPreview}
                   className="px-3 py-1.5 bg-teal-500/10 hover:bg-teal-500/20 text-teal-700 rounded-xl font-bold border border-teal-500/30 transition-colors text-xs"
                 >
-                  문자 알림 받기
+                  알림 로그
                 </button>
               </div>
             </div>
