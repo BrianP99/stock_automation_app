@@ -1,7 +1,7 @@
 import type { Config } from '@netlify/functions';
 import { getStockAnalysis } from '../../server/marketData';
 import { getCurrentSession, saveCurrentSession } from '../../server/sessionStore';
-import { notifyDiscordSummary, debugWebhookEnv, type PositionWithLivePrice } from '../../server/discord';
+import { notifyDiscordSummary, type PositionWithLivePrice } from '../../server/discord';
 
 // "지금 요약 보내기" — on-demand portfolio snapshot (총평가금액/손익/보유종목별
 // 현재가·수익률) pushed to Discord, independent of the 5-min trading tick.
@@ -44,15 +44,10 @@ export default async () => {
   ];
   await saveCurrentSession(session);
 
-  return new Response(
-    JSON.stringify({
-      ok: notifyResult.ok,
-      error: notifyResult.ok ? undefined : notifyResult.error,
-      debug: notifyResult.ok ? undefined : debugWebhookEnv(), // TEMP — remove once resolved
-      session,
-    }),
-    { status: notifyResult.ok ? 200 : 502, headers: { 'Content-Type': 'application/json' } }
-  );
+  return new Response(JSON.stringify({ ok: notifyResult.ok, error: notifyResult.ok ? undefined : notifyResult.error, session }), {
+    status: notifyResult.ok ? 200 : 502,
+    headers: { 'Content-Type': 'application/json' },
+  });
 };
 
 export const config: Config = {
