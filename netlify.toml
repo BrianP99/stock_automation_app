@@ -13,3 +13,11 @@
   # etc.) — but vite.config.ts needs those at build time. Force npm to
   # install them anyway.
   NPM_FLAGS = "--include=dev"
+
+[dev]
+  # Without this, `netlify dev` has no dev-server command to run and falls
+  # back to [build].command (a one-shot production build) — that never
+  # opens a port, so it times out waiting for 5173. Run Vite's actual dev
+  # server instead; @netlify/vite-plugin emulates Functions/Blobs inside it.
+  command = "npx vite"
+  targetPort = 5173
