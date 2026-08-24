@@ -28,6 +28,17 @@ export interface Position {
   openedAt: string;
 }
 
+/** One row in the "알림 로그" — every attempted Discord push, success or failure. */
+export interface NotificationLogEntry {
+  id: string;
+  timestamp: string;
+  kind: 'trade' | 'summary';
+  title: string;
+  detail: string;
+  ok: boolean;
+  error?: string;
+}
+
 export interface TradeOrder {
   id: string;
   timestamp: string;
@@ -117,6 +128,7 @@ export interface TradingSession {
   portfolio: PortfolioState;
   tradeOrders: TradeOrder[];
   watchlist: WatchlistCandidate[];
+  notificationLog: NotificationLogEntry[];
   latestAiMessage: string;
   isPaused: boolean;
   isActive: boolean;

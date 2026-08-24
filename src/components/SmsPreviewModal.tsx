@@ -1,76 +1,139 @@
 import React, { useEffect, useState } from 'react';
-import { X, MessageSquare, CheckCheck } from 'lucide-react';
-import { TradeOrder } from '../types';
+import { X, Bell, CheckCircle2, XCircle, Send } from 'lucide-react';
+import { NotificationLogEntry } from '../types';
 
 interface SmsPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
 
+/** 알림 로그 — 실제로 디스코드에 전송된(또는 실패한) 매수/매도·요약 알림 내역. */
 export const SmsPreviewModal: React.FC<SmsPreviewModalProps> = ({ isOpen, onClose }) => {
-  const [lastOrder, setLastOrder] = useState<TradeOrder | null>(null);
+  const [log, setLog] = useState<NotificationLogEntry[]>([]);
+  const [isActive, setIsActive] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isSending, setIsSending] = useState<boolean>(false);
+  const [sendResult, setSendResult] = useState<'ok' | 'fail' | null>(null);
 
-  useEffect(() => {
-    if (!isOpen) return;
+  const fetchLog = () => {
+    setIsLoading(true);
     fetch('/api/session/state')
       .then((res) => (res.ok ? res.json() : { active: false }))
-      .then((data) => setLastOrder(data.active ? data.session?.tradeOrders?.[0] ?? null : null))
-      .catch(() => setLastOrder(null));
+      .then((data) => {
+        setIsActive(!!data.active);
+        setLog(data.active ? data.session?.notificationLog ?? [] : []);
+      })
+      .catch(() => {
+        setIsActive(false);
+        setLog([]);
+      })
+      .finally(() => setIsLoading(false));
+  };
+
+  useEffect(() => {
+    if (isOpen) {
+      setSendResult(null);
+      fetchLog();
+    }
   }, [isOpen]);
+
+  const handleSendSummary = async () => {
+    setIsSending(true);
+    setSendResult(null);
+    try {
+      const res = await fetch('/api/session/notify-summary', { method: 'POST' });
+      const body = await res.json();
+      setSendResult(res.ok ? 'ok' : 'fail');
+      setLog(body.session?.notificationLog ?? []);
+    } catch {
+      setSendResult('fail');
+    } finally {
+      setIsSending(false);
+    }
+  };
 
   if (!isOpen) return null;
 
-  const isBuy = !lastOrder || lastOrder.type === 'BUY';
-  const stockName = lastOrder?.stockName || '삼성전자';
-  const price = lastOrder?.price || 72500;
-  const quantity = lastOrder?.quantity || 10;
-  const reason = lastOrder?.reason || '이동평균선 상향 돌파 및 기술적 매수 신호 감지';
-
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4">
-      <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
-        <button onClick={onClose} className="absolute top-5 right-5 w-9 h-9 rounded-2xl bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition-colors">
+      <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative max-h-[85vh] flex flex-col">
+        <button
+          onClick={onClose}
+          className="absolute top-5 right-5 w-9 h-9 rounded-2xl bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center transition-colors"
+        >
           <X className="w-5 h-5" />
         </button>
 
-        <div className="flex items-center space-x-3 mb-6">
-          <div className="w-11 h-11 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
-            <MessageSquare className="w-6 h-6" />
+        <div className="flex items-center space-x-3 mb-4">
+          <div className="w-11 h-11 rounded-2xl bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300">
+            <Bell className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="text-xl font-bold text-white">체결 알림 문자/알림톡</h3>
-            <p className="text-xs text-slate-400">AI 체결 시 휴대전화로 전송되는 실제 알림 예시입니다.</p>
+            <h3 className="text-xl font-bold text-white">알림 로그</h3>
+            <p className="text-xs text-slate-400">매수/매도 체결 시 디스코드로 전송된 알림 내역입니다.</p>
           </div>
         </div>
 
-        <div className="bg-amber-100/90 text-slate-900 rounded-2xl p-4 space-y-3 font-sans shadow-inner">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-600 border-b border-amber-200 pb-2">
-            <span>[AI 주식 자동매매 알림톡]</span>
-            <span className="text-amber-800 font-mono">{lastOrder ? new Date(lastOrder.timestamp).toLocaleTimeString('ko-KR') : '오전 10:15'}</span>
-          </div>
+        <button
+          onClick={handleSendSummary}
+          disabled={!isActive || isSending}
+          className="w-full mb-4 py-3 bg-indigo-500 hover:bg-indigo-400 disabled:opacity-50 disabled:hover:bg-indigo-500 text-white font-bold text-sm rounded-2xl transition-colors flex items-center justify-center gap-2"
+        >
+          <Send className="w-4 h-4" />
+          {isSending ? '전송 중...' : '지금 포트폴리오 요약 보내기'}
+        </button>
 
-          <div className="space-y-1.5 text-sm">
-            <p className="font-extrabold text-slate-900 text-base">
-              📢 {stockName} AI {isBuy ? '매수' : '매도'} 체결 안내
-            </p>
-            <p className="text-slate-700">
-              AI 자동매매가 <strong className="text-amber-900">{stockName}</strong> {quantity}주를
-              {isBuy ? ' 평균가 ' : ' 단가 '}
-              <strong className="text-amber-900">{price.toLocaleString('ko-KR')}원</strong>에 {isBuy ? '매수' : '매도'}하였습니다.
-            </p>
-            <div className="bg-amber-200/60 p-2 rounded-xl text-xs text-amber-950 font-medium">💡 체결 사유: {reason}</div>
-          </div>
+        {sendResult === 'ok' && (
+          <p className="text-xs text-emerald-400 text-center -mt-2 mb-3">디스코드로 요약을 전송했습니다.</p>
+        )}
+        {sendResult === 'fail' && (
+          <p className="text-xs text-red-400 text-center -mt-2 mb-3">전송에 실패했습니다. 웹훅 설정을 확인해주세요.</p>
+        )}
 
-          <div className="pt-2 border-t border-amber-200 text-xs text-slate-600 flex items-center justify-between font-semibold">
-            <span>알림 수신: 등록된 휴대전화</span>
-            <span className="flex items-center text-emerald-700">
-              <CheckCheck className="w-4 h-4 mr-0.5" /> 연동 완료
-            </span>
-          </div>
+        <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+          {isLoading ? (
+            <div className="py-12 text-center">
+              <div className="inline-block w-6 h-6 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : !isActive ? (
+            <p className="text-sm text-slate-500 text-center py-12">진행 중인 자동매매 세션이 없습니다.</p>
+          ) : log.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-12">아직 전송된 알림이 없습니다.</p>
+          ) : (
+            log.map((entry) => (
+              <div
+                key={entry.id}
+                className={`p-3.5 rounded-2xl border ${
+                  entry.ok ? 'bg-slate-800/60 border-slate-700' : 'bg-red-950/40 border-red-500/30'
+                }`}
+              >
+                <div className="flex items-center justify-between text-xs font-bold mb-1">
+                  <span className="flex items-center gap-1.5">
+                    {entry.ok ? (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    ) : (
+                      <XCircle className="w-3.5 h-3.5 text-red-400" />
+                    )}
+                    <span className={entry.ok ? 'text-slate-200' : 'text-red-300'}>{entry.title}</span>
+                  </span>
+                  <span className="text-slate-500 font-mono">{new Date(entry.timestamp).toLocaleTimeString('ko-KR')}</span>
+                </div>
+                <p className="text-xs text-slate-400">{entry.detail}</p>
+                {!entry.ok && entry.error && (
+                  <p className="text-[11px] text-red-400/80 mt-1 truncate" title={entry.error}>
+                    오류: {entry.error}
+                  </p>
+                )}
+              </div>
+            ))
+          )}
         </div>
 
-        <button onClick={onClose} className="w-full mt-5 py-3.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-extrabold text-base rounded-2xl transition-colors shadow-lg">
-          확인 완료
+        <button
+          onClick={onClose}
+          className="w-full mt-4 py-3.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-base rounded-2xl transition-colors"
+        >
+          닫기
         </button>
       </div>
     </div>

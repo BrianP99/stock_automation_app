@@ -57,8 +57,22 @@ export default async (req: Request) => {
       session.portfolio = result.portfolio;
       session.tradeOrders = [result.order, ...session.tradeOrders];
       session.latestAiMessage = result.order.reason;
+
+      const notifyResult = await notifyDiscordTrade(result.order);
+      session.notificationLog = [
+        {
+          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: new Date().toISOString(),
+          kind: 'trade',
+          title: `매도 체결 — ${result.order.stockName}`,
+          detail: `${result.order.quantity}주 @ ${Math.round(result.order.price).toLocaleString('ko-KR')}원 (지금 매도)`,
+          ok: notifyResult.ok,
+          ...(notifyResult.ok ? {} : { error: notifyResult.error || `HTTP ${notifyResult.status}` }),
+        },
+        ...(session.notificationLog || []),
+      ];
+
       await saveCurrentSession(session);
-      await notifyDiscordTrade(result.order);
       return new Response(JSON.stringify(session), { headers: { 'Content-Type': 'application/json' } });
     } catch (err) {
       console.error('Error selling position:', err);
@@ -85,7 +99,19 @@ export default async (req: Request) => {
         // Leave this one in place; it'll be retried on the next manual exit attempt.
       }
     }
-    if (exitOrders.length) await notifyDiscordTrades(exitOrders);
+    if (exitOrders.length) {
+      const notifyResults = await notifyDiscordTrades(exitOrders);
+      const logEntries = notifyResults.map(({ order, result: notifyResult }) => ({
+        id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: new Date().toISOString(),
+        kind: 'trade' as const,
+        title: `매도 체결 — ${order.stockName}`,
+        detail: `${order.quantity}주 @ ${Math.round(order.price).toLocaleString('ko-KR')}원 (전량 매도)`,
+        ok: notifyResult.ok,
+        ...(notifyResult.ok ? {} : { error: notifyResult.error || `HTTP ${notifyResult.status}` }),
+      }));
+      session.notificationLog = [...logEntries, ...(session.notificationLog || [])];
+    }
 
     if (session.portfolio.positions.length === 0) {
       session.isActive = false;

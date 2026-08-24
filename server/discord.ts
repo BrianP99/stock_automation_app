@@ -1,4 +1,4 @@
-import type { TradeOrder } from '../src/types';
+import type { TradeOrder, PortfolioState, Position } from '../src/types';
 
 // Reads DISCORD_WEBHOOK_URL from the environment — Netlify Functions expose
 // env vars via the global `Netlify.env` object, plain Node (local dev,
@@ -9,11 +9,40 @@ function getWebhookUrl(): string | undefined {
   return netlifyEnv?.get?.('DISCORD_WEBHOOK_URL') || process.env.DISCORD_WEBHOOK_URL;
 }
 
-/** Fire-and-forget trade notification. Never throws — a failed webhook must not break a trading tick. */
-export async function notifyDiscordTrade(order: TradeOrder): Promise<void> {
-  const webhookUrl = getWebhookUrl();
-  if (!webhookUrl) return;
+export interface DiscordNotifyResult {
+  ok: boolean;
+  status?: number;
+  error?: string;
+}
 
+async function postToDiscord(payload: unknown): Promise<DiscordNotifyResult> {
+  const webhookUrl = getWebhookUrl();
+  if (!webhookUrl) return { ok: false, error: 'DISCORD_WEBHOOK_URL이 설정되지 않았습니다.' };
+
+  try {
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(5000),
+    });
+    // fetch() doesn't throw on 4xx/5xx — a bad/deleted webhook or malformed
+    // payload would silently look like success without checking res.ok.
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      console.error(`Discord webhook responded ${res.status}: ${text}`);
+      return { ok: false, status: res.status, error: text || `HTTP ${res.status}` };
+    }
+    return { ok: true, status: res.status };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('Discord notification failed:', err);
+    return { ok: false, error: message };
+  }
+}
+
+/** One trade fill. Never throws — a failed webhook must not break a trading tick. */
+export async function notifyDiscordTrade(order: TradeOrder): Promise<DiscordNotifyResult> {
   const isBuy = order.type === 'BUY';
   const fields = [
     { name: '수량', value: `${order.quantity}주`, inline: true },
@@ -33,24 +62,54 @@ export async function notifyDiscordTrade(order: TradeOrder): Promise<void> {
     timestamp: order.timestamp,
   };
 
-  try {
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'AI 주식매매 알림봇', embeds: [embed] }),
-      signal: AbortSignal.timeout(5000),
-    });
-    // fetch() doesn't throw on 4xx/5xx — a bad/deleted webhook or malformed
-    // payload would silently look like success without checking res.ok.
-    if (!res.ok) {
-      console.error(`Discord webhook responded ${res.status}: ${await res.text().catch(() => '')}`);
-    }
-  } catch (err) {
-    console.error('Discord notification failed:', err);
-  }
+  return postToDiscord({ username: 'AI 주식매매 알림봇', embeds: [embed] });
 }
 
-/** Notifies for a batch of orders in one tick, without letting one failure block the rest. */
-export async function notifyDiscordTrades(orders: TradeOrder[]): Promise<void> {
-  await Promise.allSettled(orders.map(notifyDiscordTrade));
+/** Notifies for a batch of orders in one tick, pairing each with its own send result for logging. */
+export async function notifyDiscordTrades(orders: TradeOrder[]): Promise<{ order: TradeOrder; result: DiscordNotifyResult }[]> {
+  const results = await Promise.all(orders.map(async (order) => ({ order, result: await notifyDiscordTrade(order) })));
+  return results;
+}
+
+export interface PositionWithLivePrice {
+  position: Position;
+  currentPriceKrw: number;
+}
+
+/** On-demand portfolio snapshot ("지금 요약 보내기") — current valuation, P&L, and each held position's live price/return. */
+export async function notifyDiscordSummary(
+  portfolio: PortfolioState,
+  positions: PositionWithLivePrice[]
+): Promise<DiscordNotifyResult> {
+  const isProfit = portfolio.totalPnL >= 0;
+
+  const positionLines = positions.length
+    ? positions
+        .map(({ position, currentPriceKrw }) => {
+          const pnlPercent = Number(
+            (((currentPriceKrw - position.avgBuyPriceKrw) / position.avgBuyPriceKrw) * 100).toFixed(2)
+          );
+          const sign = pnlPercent >= 0 ? '+' : '';
+          return `• ${position.name}(${position.symbol}) ${position.quantity}주 — 현재가 ${Math.round(currentPriceKrw).toLocaleString('ko-KR')}원 (${sign}${pnlPercent}%)`;
+        })
+        .join('\n')
+    : '보유 종목 없음 (현금 대기 중)';
+
+  const embed = {
+    title: '📊 포트폴리오 요약',
+    color: isProfit ? 0xef4444 : 0x3b82f6,
+    fields: [
+      { name: '총 평가금액', value: `${Math.round(portfolio.currentValuation).toLocaleString('ko-KR')}원`, inline: true },
+      {
+        name: '실시간 손익',
+        value: `${isProfit ? '+' : ''}${Math.round(portfolio.totalPnL).toLocaleString('ko-KR')}원 (${isProfit ? '+' : ''}${portfolio.totalPnLPercent}%)`,
+        inline: true,
+      },
+      { name: '예수금', value: `${Math.round(portfolio.cashBalance).toLocaleString('ko-KR')}원`, inline: true },
+      { name: `보유 종목 (${positions.length}개)`, value: positionLines },
+    ],
+    timestamp: new Date().toISOString(),
+  };
+
+  return postToDiscord({ username: 'AI 주식매매 알림봇', embeds: [embed] });
 }

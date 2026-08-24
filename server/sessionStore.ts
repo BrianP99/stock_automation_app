@@ -12,6 +12,7 @@ const STORE_NAME = 'trading-sessions';
 const CURRENT_KEY = 'current';
 const MAX_ORDERS_KEPT = 300;
 const MAX_WATCHLIST_KEPT = 60;
+const MAX_NOTIFICATION_LOG_KEPT = 50;
 
 function store() {
   // Strong consistency matters here: pause/exit/config updates must be
@@ -33,6 +34,8 @@ export async function saveCurrentSession(session: StoredSession): Promise<void> 
       .slice()
       .sort((a, b) => b.confidence - a.confidence)
       .slice(0, MAX_WATCHLIST_KEPT),
+    // Older sessions (saved before this field existed) won't have it yet.
+    notificationLog: (session.notificationLog || []).slice(0, MAX_NOTIFICATION_LOG_KEPT),
   };
   await store().setJSON(CURRENT_KEY, trimmed);
 }

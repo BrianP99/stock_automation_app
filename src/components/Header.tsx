@@ -103,10 +103,10 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenSmsPreview}
             className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-teal-300 px-3 py-2 rounded-xl text-sm font-semibold border border-teal-500/30 transition-all shadow-sm"
-            title="문자 알림 미리보기"
+            title="디스코드 알림 로그"
           >
             <Zap className="w-4 h-4 text-teal-400" />
-            <span className="hidden md:inline">알림 문자</span>
+            <span className="hidden md:inline">알림 로그</span>
           </button>
 
           <button
