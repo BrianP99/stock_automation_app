@@ -3,6 +3,7 @@ import { getStockAnalysis, getScreeningSignal } from '../../server/marketData';
 import { runPortfolioTick, resetDailyCountersIfNewDay, type HeldAnalysis, type CandidateAnalysis } from '../../server/tradingEngine';
 import { getCurrentSession, saveCurrentSession } from '../../server/sessionStore';
 import { TRADING_UNIVERSE } from '../../server/data/curatedUniverse';
+import { notifyDiscordTrades } from '../../server/discord';
 import type { WatchlistCandidate } from '../../src/types';
 
 // Runs every 5 minutes regardless of whether anyone has the dashboard open.
@@ -114,6 +115,7 @@ export default async () => {
     }
 
     await saveCurrentSession(session);
+    if (result.orders.length) await notifyDiscordTrades(result.orders);
   } catch (err) {
     // A blocked/failed market-data fetch shouldn't crash the schedule — just
     // record it so the dashboard can surface "last successful update" info.

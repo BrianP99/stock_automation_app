@@ -2,6 +2,7 @@ import type { Config } from '@netlify/functions';
 import { getStockAnalysis } from '../../server/marketData';
 import { sellPositionNow } from '../../server/tradingEngine';
 import { getCurrentSession, saveCurrentSession } from '../../server/sessionStore';
+import { notifyDiscordTrade, notifyDiscordTrades } from '../../server/discord';
 import type { TradingConfig } from '../../src/types';
 
 type Action = 'pause' | 'resume' | 'exit' | 'update-config' | 'sell-position';
@@ -57,6 +58,7 @@ export default async (req: Request) => {
       session.tradeOrders = [result.order, ...session.tradeOrders];
       session.latestAiMessage = result.order.reason;
       await saveCurrentSession(session);
+      await notifyDiscordTrade(result.order);
       return new Response(JSON.stringify(session), { headers: { 'Content-Type': 'application/json' } });
     } catch (err) {
       console.error('Error selling position:', err);
@@ -70,17 +72,20 @@ export default async (req: Request) => {
   if (action === 'exit') {
     // Sell every position independently — one symbol's fetch failing shouldn't
     // block liquidating the rest.
+    const exitOrders = [];
     for (const position of [...session.portfolio.positions]) {
       try {
         const analysis = await getStockAnalysis(position.symbol);
         const result = sellPositionNow(session.portfolio, position, analysis.price);
         session.portfolio = result.portfolio;
         session.tradeOrders = [result.order, ...session.tradeOrders];
+        exitOrders.push(result.order);
       } catch (err) {
         console.error(`Error exiting position ${position.symbol}:`, err);
         // Leave this one in place; it'll be retried on the next manual exit attempt.
       }
     }
+    if (exitOrders.length) await notifyDiscordTrades(exitOrders);
 
     if (session.portfolio.positions.length === 0) {
       session.isActive = false;
