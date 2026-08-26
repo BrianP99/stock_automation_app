@@ -7,6 +7,8 @@ import { SafetySettingsModal } from './components/SafetySettingsModal';
 import { SmsPreviewModal } from './components/SmsPreviewModal';
 import { TradingConfig } from './types';
 import { Bot } from 'lucide-react';
+import { CurrencyDisplayProvider } from './lib/currencyDisplay';
+import { ChartModalProvider } from './lib/chartModal';
 
 const DEFAULT_CONFIG: TradingConfig = {
   investmentAmount: 1000000,
@@ -67,11 +69,14 @@ export default function App() {
   };
 
   return (
+    <CurrencyDisplayProvider>
+    <ChartModalProvider>
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950 antialiased">
       <Header
         isTradingActive={!!tradingConfig?.autoTradingEnabled}
         fontSizeClass={fontSizeClass}
         setFontSizeClass={setFontSizeClass}
+        showCurrencyToggle={!!tradingConfig}
         onOpenDailyReport={() => setIsDailyReportOpen(true)}
         onOpenSafetySettings={() => setIsSafetySettingsOpen(true)}
         onOpenSmsPreview={() => setIsSmsPreviewOpen(true)}
@@ -121,5 +126,7 @@ export default function App() {
 
       <SmsPreviewModal isOpen={isSmsPreviewOpen} onClose={() => setIsSmsPreviewOpen(false)} />
     </div>
+    </ChartModalProvider>
+    </CurrencyDisplayProvider>
   );
 }

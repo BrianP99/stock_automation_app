@@ -32,11 +32,15 @@ function makeOrder(
   symbol: string,
   stockName: string,
   market: Market,
+  currency: 'KRW' | 'USD',
   price: number,
+  priceNative: number,
   qty: number,
   reason: string,
   confidence: number,
-  profitPercent?: number
+  profitPercent?: number,
+  profitAmount?: number,
+  profitAmountNative?: number
 ): TradeOrder {
   return {
     id: `order-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -45,10 +49,15 @@ function makeOrder(
     symbol,
     stockName,
     market,
+    currency,
     price,
+    priceNative,
     quantity: qty,
     totalAmount: qty * price,
+    totalAmountNative: qty * priceNative,
     ...(profitPercent != null ? { profitPercent } : {}),
+    ...(profitAmount != null ? { profitAmount } : {}),
+    ...(profitAmountNative != null ? { profitAmountNative } : {}),
     reason,
     aiConfidence: confidence,
   };
@@ -58,11 +67,13 @@ function closePosition(
   portfolio: PortfolioState,
   position: Position,
   priceKrw: number,
+  priceNative: number,
   reason: string,
   confidence: number
 ): { portfolio: PortfolioState; order: TradeOrder } {
   const proceeds = position.quantity * priceKrw;
   const tradePnL = (priceKrw - position.avgBuyPriceKrw) * position.quantity;
+  const tradePnLNative = (priceNative - position.avgBuyPriceNative) * position.quantity;
   const profitPercent = Number((((priceKrw - position.avgBuyPriceKrw) / position.avgBuyPriceKrw) * 100).toFixed(2));
   const next: PortfolioState = {
     ...portfolio,
@@ -74,7 +85,21 @@ function closePosition(
   };
   return {
     portfolio: next,
-    order: makeOrder('SELL', position.symbol, position.name, position.market, priceKrw, position.quantity, reason, confidence, profitPercent),
+    order: makeOrder(
+      'SELL',
+      position.symbol,
+      position.name,
+      position.market,
+      position.currency,
+      priceKrw,
+      priceNative,
+      position.quantity,
+      reason,
+      confidence,
+      profitPercent,
+      Math.round(tradePnL),
+      Number(tradePnLNative.toFixed(2))
+    ),
   };
 }
 
@@ -115,16 +140,17 @@ function openPosition(
     positions: [...portfolio.positions, position],
     todayTradesCount: portfolio.todayTradesCount + 1,
   };
-  return { portfolio: next, order: makeOrder('BUY', symbol, name, market, priceKrw, qty, reason, confidence) };
+  return { portfolio: next, order: makeOrder('BUY', symbol, name, market, currency, priceKrw, priceNative, qty, reason, confidence) };
 }
 
 /** Emergency single-position exit (the "지금 매도" button) — bypasses the daily trade cap. */
 export function sellPositionNow(
   portfolio: PortfolioState,
   position: Position,
-  priceKrw: number
+  priceKrw: number,
+  priceNative: number
 ): { portfolio: PortfolioState; order: TradeOrder } {
-  return closePosition(portfolio, position, priceKrw, '사용자 요청으로 긴급 매도했습니다.', 99);
+  return closePosition(portfolio, position, priceKrw, priceNative, '사용자 요청으로 긴급 매도했습니다.', 99);
 }
 
 export interface PortfolioTickResult {
@@ -155,6 +181,7 @@ export function runPortfolioTick(
   // 1) Evaluate every held position for stop-loss / take-profit / SELL signal.
   for (const { position, analysis } of heldAnalyses) {
     const priceKrw = analysis.price;
+    const priceNative = analysis.nativePrice;
     const pnlPercent = Number((((priceKrw - position.avgBuyPriceKrw) / position.avgBuyPriceKrw) * 100).toFixed(2));
 
     if (pnlPercent <= -rules.stopLossPercent) {
@@ -162,6 +189,7 @@ export function runPortfolioTick(
         working,
         position,
         priceKrw,
+        priceNative,
         `자동 손절: ${position.name}이(가) 설정하신 손실 한도 -${rules.stopLossPercent}%에 도달해 매도했습니다.`,
         99
       );
@@ -176,6 +204,7 @@ export function runPortfolioTick(
         working,
         position,
         priceKrw,
+        priceNative,
         `목표 익절: ${position.name}이(가) 목표 수익률 +${rules.targetProfitPercent}%를 달성해 매도했습니다.`,
         96
       );
@@ -185,7 +214,14 @@ export function runPortfolioTick(
     }
 
     if (analysis.signal.action === 'SELL' && working.todayTradesCount < rules.maxTradesPerDay) {
-      const result = closePosition(working, position, priceKrw, `${position.name}: ${analysis.signal.reason}`, analysis.signal.confidence);
+      const result = closePosition(
+        working,
+        position,
+        priceKrw,
+        priceNative,
+        `${position.name}: ${analysis.signal.reason}`,
+        analysis.signal.confidence
+      );
       working = result.portfolio;
       orders.push(result.order);
     }

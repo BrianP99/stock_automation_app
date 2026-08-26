@@ -13,10 +13,14 @@ import {
   Volume2,
   WifiOff,
   ServerCog,
+  LineChart,
 } from 'lucide-react';
 import { HoldingsPanel } from './HoldingsPanel';
 import { WatchlistPanel } from './WatchlistPanel';
-import { StockSearchPanel } from './StockSearchPanel';
+import { RealizedPnlPanel } from './RealizedPnlPanel';
+import { useCurrencyDisplay, formatStockPrice } from '../lib/currencyDisplay';
+import { useChartModal } from '../lib/chartModal';
+import { CompanyLogo } from './CompanyLogo';
 
 interface TradingDashboardProps {
   config: TradingConfig;
@@ -55,6 +59,8 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
   const [session, setSession] = useState<TradingSession | null>(null);
   const [initializing, setInitializing] = useState<boolean>(true);
   const [initError, setInitError] = useState<string | null>(null);
+  const { mode: currencyMode } = useCurrencyDisplay();
+  const { openChart, openPicker } = useChartModal();
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const [isControlling, setIsControlling] = useState<boolean>(false);
   const [sellingSymbol, setSellingSymbol] = useState<string | null>(null);
@@ -208,6 +214,18 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
 
   return (
     <div className={`max-w-7xl mx-auto px-4 py-6 space-y-6 ${fontSizeClass}`}>
+      <button
+        onClick={() =>
+          openPicker(
+            portfolio.positions.map((p) => ({ symbol: p.symbol, name: p.name, avgBuyPrice: p.avgBuyPriceKrw }))
+          )
+        }
+        className="fixed bottom-6 right-6 z-30 w-14 h-14 rounded-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-xl shadow-emerald-500/30 flex items-center justify-center transition-transform hover:scale-105"
+        title="현재 주가 차트 보기"
+      >
+        <LineChart className="w-6 h-6" />
+      </button>
+
       {/* Top Banner */}
       <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center space-x-4">
@@ -354,6 +372,8 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
             <HoldingsPanel positions={portfolio.positions} onSellPosition={handleSellPosition} isSelling={sellingSymbol} />
           </div>
 
+          <RealizedPnlPanel tradeOrders={tradeOrders} />
+
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-3">
               <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
@@ -383,9 +403,11 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
                 return (
                   <div
                     key={order.id}
-                    className={`p-3.5 rounded-2xl border transition-all ${
+                    onClick={() => openChart({ symbol: order.symbol, name: order.stockName })}
+                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer hover:brightness-95 ${
                       isBuy ? 'bg-red-50/60 border-red-200 text-slate-900' : 'bg-blue-50/60 border-blue-200 text-slate-900'
                     }`}
+                    title="차트 보기"
                   >
                     <div className="flex items-center justify-between text-xs font-bold mb-1">
                       <span className={`px-2 py-0.5 rounded-full font-black ${isBuy ? 'bg-red-600 text-white' : 'bg-blue-600 text-white'}`}>
@@ -393,12 +415,27 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
                       </span>
                       <span className="text-slate-400 font-mono">{new Date(order.timestamp).toLocaleString('ko-KR')}</span>
                     </div>
-                    <div className="flex items-baseline justify-between mt-2">
-                      <span className="font-extrabold text-slate-900">
-                        {order.stockName} {order.quantity}주 @ {order.price.toLocaleString('ko-KR')}원
+                    <div className="flex items-baseline justify-between mt-2 gap-2">
+                      <span className="font-extrabold text-slate-900 flex items-center gap-2 min-w-0">
+                        <CompanyLogo symbol={order.symbol} name={order.stockName} size={24} />
+                        <span className="truncate">
+                          {order.stockName} {order.quantity}주 @ {formatStockPrice(order.priceNative, order.price, order.currency, currencyMode)}
+                        </span>
                       </span>
-                      <span className="text-xs font-bold text-slate-600">총 {order.totalAmount.toLocaleString('ko-KR')}원</span>
+                      <span className="text-xs font-bold text-slate-600 shrink-0">
+                        총 {formatStockPrice(order.totalAmountNative, order.totalAmount, order.currency, currencyMode)}
+                      </span>
                     </div>
+                    {!isBuy && order.profitAmount != null && (
+                      <div
+                        className={`text-xs font-black mt-1 ${order.profitAmount >= 0 ? 'text-red-600' : 'text-blue-700'}`}
+                      >
+                        실현손익 {order.profitAmount >= 0 ? '+' : ''}
+                        {formatStockPrice(order.profitAmountNative ?? 0, order.profitAmount ?? 0, order.currency, currencyMode)} (
+                        {order.profitAmount >= 0 ? '+' : ''}
+                        {order.profitPercent ?? 0}%)
+                      </div>
+                    )}
                     <p className="text-xs text-slate-600 mt-2 bg-white/80 p-2 rounded-xl border border-slate-200/60 font-medium">
                       💡 사유: {order.reason}
                     </p>
@@ -411,7 +448,6 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
 
         <div className="space-y-6">
           <WatchlistPanel watchlist={watchlist} heldSymbols={heldSymbols} />
-          <StockSearchPanel />
         </div>
       </div>
     </div>
