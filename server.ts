@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
-import { getStockAnalysis, getQuotes } from './server/marketData';
+import { getStockAnalysis, getQuotes, getPriceHistory, type ChartPeriod } from './server/marketData';
 import { TRADING_UNIVERSE } from './server/data/curatedUniverse';
 import {
   buildExplainSignalPrompt,
@@ -48,6 +48,24 @@ async function startServer() {
     } catch (err: any) {
       console.error(`Error fetching stock analysis for ${symbol}:`, err);
       return res.status(502).json({ error: '실시간 시세 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.' });
+    }
+  });
+
+  // API: Chart-only price history for a given candle period (일/주/월/년) — separate from
+  // getStockAnalysis()'s fixed 6mo/1d range so it never affects trading signals.
+  app.get('/api/stock/chart', async (req, res) => {
+    const symbol = String(req.query.symbol || '').trim();
+    const period = String(req.query.period || 'day') as ChartPeriod;
+    if (!symbol) return res.status(400).json({ error: 'symbol is required' });
+    if (!['day', 'week', 'month', 'year'].includes(period)) {
+      return res.status(400).json({ error: 'period must be one of day, week, month, year' });
+    }
+    try {
+      const result = await getPriceHistory(symbol, period);
+      return res.json(result);
+    } catch (err: any) {
+      console.error(`Error fetching price history for ${symbol}:`, err);
+      return res.status(502).json({ error: '차트 데이터를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.' });
     }
   });
 

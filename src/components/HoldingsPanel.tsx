@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Position, StockAnalysisResponse } from '../types';
-import { StockChart } from './StockChart';
 import { marketLabel, marketBadgeClass } from '../lib/market';
-import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, ShieldAlert } from 'lucide-react';
+import { useCurrencyDisplay, formatStockPrice } from '../lib/currencyDisplay';
+import { useChartModal } from '../lib/chartModal';
+import { CompanyLogo } from './CompanyLogo';
+import { LineChart, TrendingUp, TrendingDown, ShieldAlert } from 'lucide-react';
 
 interface HoldingsPanelProps {
   positions: Position[];
@@ -14,7 +16,8 @@ const POLL_INTERVAL_MS = 20000;
 
 export const HoldingsPanel: React.FC<HoldingsPanelProps> = ({ positions, onSellPosition, isSelling }) => {
   const [analyses, setAnalyses] = useState<Record<string, StockAnalysisResponse | undefined>>({});
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const { mode } = useCurrencyDisplay();
+  const { openChart } = useChartModal();
 
   useEffect(() => {
     let cancelled = false;
@@ -51,53 +54,64 @@ export const HoldingsPanel: React.FC<HoldingsPanelProps> = ({ positions, onSellP
       {positions.map((position) => {
         const analysis = analyses[position.symbol];
         const currentPrice = analysis?.price ?? position.avgBuyPriceKrw;
+        const currentPriceNative = analysis?.nativePrice ?? position.avgBuyPriceNative;
         const pnl = (currentPrice - position.avgBuyPriceKrw) * position.quantity;
+        const pnlNative = (currentPriceNative - position.avgBuyPriceNative) * position.quantity;
         const pnlPercent = Number((((currentPrice - position.avgBuyPriceKrw) / position.avgBuyPriceKrw) * 100).toFixed(2));
         const isProfit = pnl >= 0;
-        const isExpanded = expanded === position.symbol;
 
         return (
           <div key={position.symbol} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-5 flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span
-                    className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border ${marketBadgeClass(position.market)}`}
-                  >
-                    {marketLabel(position.market)}
-                    {position.exchange && ` (${position.exchange})`}
-                  </span>
-                  <h4 className="text-lg font-extrabold text-slate-900">{position.name}</h4>
-                  <span className="text-xs text-slate-400 font-mono">{position.symbol}</span>
-                  {position.sector && (
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                      {position.sector}
+              <button
+                type="button"
+                onClick={() => openChart({ symbol: position.symbol, name: position.name, avgBuyPrice: position.avgBuyPriceKrw })}
+                className="flex items-start gap-3 text-left hover:opacity-80 transition-opacity"
+                title="차트 보기"
+              >
+                <CompanyLogo symbol={position.symbol} name={position.name} size={36} className="mt-0.5" />
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full border ${marketBadgeClass(position.market)}`}
+                    >
+                      {marketLabel(position.market)}
+                      {position.exchange && ` (${position.exchange})`}
                     </span>
-                  )}
+                    <h4 className="text-lg font-extrabold text-slate-900">{position.name}</h4>
+                    <span className="text-xs text-slate-400 font-mono">{position.symbol}</span>
+                    {position.sector && (
+                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                        {position.sector}
+                      </span>
+                    )}
+                  </div>
+                  {position.description && <p className="text-xs text-slate-500 mt-1">{position.description}</p>}
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {position.quantity}주 보유 · 평단가 {formatStockPrice(position.avgBuyPriceNative, position.avgBuyPriceKrw, position.currency, mode)}
+                  </p>
                 </div>
-                {position.description && <p className="text-xs text-slate-500 mt-1">{position.description}</p>}
-                <p className="text-xs text-slate-500 mt-0.5">
-                  {position.quantity}주 보유 · 평단가 {Math.round(position.avgBuyPriceKrw).toLocaleString('ko-KR')}원
-                </p>
-              </div>
+              </button>
 
               <div className="flex items-center gap-4">
                 <div className="text-right">
-                  <div className="text-lg font-black text-slate-900">{Math.round(currentPrice).toLocaleString('ko-KR')}원</div>
+                  <div className="text-lg font-black text-slate-900">
+                    {formatStockPrice(currentPriceNative, currentPrice, position.currency, mode)}
+                  </div>
                   <div className={`text-xs font-bold flex items-center gap-1 justify-end ${isProfit ? 'text-red-600' : 'text-blue-600'}`}>
                     {isProfit ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
                     {isProfit ? '+' : ''}
-                    {Math.round(pnl).toLocaleString('ko-KR')}원 ({isProfit ? '+' : ''}
+                    {formatStockPrice(pnlNative, pnl, position.currency, mode)} ({isProfit ? '+' : ''}
                     {pnlPercent}%)
                   </div>
                 </div>
 
                 <button
-                  onClick={() => setExpanded(isExpanded ? null : position.symbol)}
+                  onClick={() => openChart({ symbol: position.symbol, name: position.name, avgBuyPrice: position.avgBuyPriceKrw })}
                   className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600"
                   title="차트 보기"
                 >
-                  {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                  <LineChart className="w-4 h-4" />
                 </button>
 
                 <button
@@ -111,12 +125,6 @@ export const HoldingsPanel: React.FC<HoldingsPanelProps> = ({ positions, onSellP
                 </button>
               </div>
             </div>
-
-            {isExpanded && analysis && (
-              <div className="border-t border-slate-100 p-4">
-                <StockChart data={analysis.history} avgBuyPrice={position.avgBuyPriceKrw} heightClassName="h-56" />
-              </div>
-            )}
           </div>
         );
       })}

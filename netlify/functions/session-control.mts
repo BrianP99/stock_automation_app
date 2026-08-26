@@ -53,7 +53,7 @@ export default async (req: Request) => {
     }
     try {
       const analysis = await getStockAnalysis(position.symbol);
-      const result = sellPositionNow(session.portfolio, position, analysis.price);
+      const result = sellPositionNow(session.portfolio, position, analysis.price, analysis.nativePrice);
       session.portfolio = result.portfolio;
       session.tradeOrders = [result.order, ...session.tradeOrders];
       session.latestAiMessage = result.order.reason;
@@ -90,7 +90,7 @@ export default async (req: Request) => {
     for (const position of [...session.portfolio.positions]) {
       try {
         const analysis = await getStockAnalysis(position.symbol);
-        const result = sellPositionNow(session.portfolio, position, analysis.price);
+        const result = sellPositionNow(session.portfolio, position, analysis.price, analysis.nativePrice);
         session.portfolio = result.portfolio;
         session.tradeOrders = [result.order, ...session.tradeOrders];
         exitOrders.push(result.order);

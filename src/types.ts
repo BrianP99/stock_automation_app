@@ -46,17 +46,25 @@ export interface TradeOrder {
   symbol: string;
   stockName: string;
   market: Market;
+  currency: 'KRW' | 'USD';
   price: number; // KRW
+  priceNative: number; // native currency (== price when currency is KRW)
   quantity: number;
-  totalAmount: number;
+  totalAmount: number; // KRW
+  totalAmountNative: number;
   profitPercent?: number;
+  profitAmount?: number; // KRW realized P&L — SELL orders only
+  profitAmountNative?: number; // native currency realized P&L — SELL orders only
   reason: string;
   aiConfidence: number;
 }
 
 export interface ChartPoint {
   time: string;
-  price: number;
+  price: number; // close
+  open?: number;
+  high?: number;
+  low?: number;
   sma5?: number | null;
   sma20?: number | null;
   sma60?: number | null;

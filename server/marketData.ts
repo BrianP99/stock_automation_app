@@ -15,6 +15,9 @@ export function toYahooSymbol(symbol: string): string {
 interface ParsedChart {
   timestamp: number[];
   close: number[];
+  open: number[];
+  high: number[];
+  low: number[];
   currency: string;
   previousClose: number | null;
   exchange: string;
@@ -55,17 +58,33 @@ async function fetchChartRaw(yahooSymbol: string, range: string, interval: strin
 
 function parseChart(raw: any): ParsedChart {
   const timestamps: number[] = raw.timestamp || [];
-  const closesRaw: (number | null)[] = raw.indicators?.quote?.[0]?.close || [];
+  const quote = raw.indicators?.quote?.[0] || {};
+  const closesRaw: (number | null)[] = quote.close || [];
+  const opensRaw: (number | null)[] = quote.open || [];
+  const highsRaw: (number | null)[] = quote.high || [];
+  const lowsRaw: (number | null)[] = quote.low || [];
   const timestamp: number[] = [];
   const close: number[] = [];
+  const open: number[] = [];
+  const high: number[] = [];
+  const low: number[] = [];
   for (let i = 0; i < timestamps.length; i++) {
     if (closesRaw[i] == null) continue; // skip non-trading / missing bars
     timestamp.push(timestamps[i]);
     close.push(closesRaw[i] as number);
+    // Yahoo occasionally omits open/high/low for a bar that still has a close
+    // (e.g. the still-forming current bar) — fall back to close so every
+    // array stays index-aligned with `close`/`timestamp`.
+    open.push(opensRaw[i] ?? (closesRaw[i] as number));
+    high.push(highsRaw[i] ?? (closesRaw[i] as number));
+    low.push(lowsRaw[i] ?? (closesRaw[i] as number));
   }
   return {
     timestamp,
     close,
+    open,
+    high,
+    low,
     currency: raw.meta?.currency || 'USD',
     previousClose: raw.meta?.chartPreviousClose ?? raw.meta?.previousClose ?? null,
     exchange: normalizeExchange(raw.meta?.fullExchangeName, raw.meta?.exchangeName),
@@ -146,7 +165,10 @@ async function getUsdKrwRate(): Promise<number> {
 
 export interface Candle {
   time: string;
-  price: number;
+  price: number; // close
+  open?: number;
+  high?: number;
+  low?: number;
   sma5: number | null;
   sma20: number | null;
   sma60: number | null;
@@ -260,6 +282,73 @@ export async function getStockAnalysis(symbol: string): Promise<StockAnalysis> {
     history: fullHistory.slice(-HISTORY_POINTS_RETURNED),
     signal,
   };
+}
+
+export type ChartPeriod = 'day' | 'week' | 'month' | 'year';
+
+// Yahoo's chart API has no native yearly interval — '3mo' at 'max' range is
+// the closest built-in approximation for a long-horizon view, so "년" reuses
+// quarterly bars rather than true one-per-year candles.
+const CHART_PERIOD_PARAMS: Record<ChartPeriod, { range: string; interval: string }> = {
+  day: { range: '6mo', interval: '1d' },
+  week: { range: '2y', interval: '1wk' },
+  month: { range: '10y', interval: '1mo' },
+  year: { range: 'max', interval: '3mo' },
+};
+
+export interface PriceHistoryResult {
+  symbol: string;
+  period: ChartPeriod;
+  currency: 'KRW' | 'USD';
+  history: Candle[];
+}
+
+/**
+ * Chart-only price history for a given candle period (일/주/월/년), independent of
+ * getStockAnalysis()'s fixed 6mo/1d range — this must never influence trading signals,
+ * only what the user sees when they open a stock's chart.
+ */
+export async function getPriceHistory(symbol: string, period: ChartPeriod): Promise<PriceHistoryResult> {
+  const yahooSymbol = toYahooSymbol(symbol);
+  const { range, interval } = CHART_PERIOD_PARAMS[period];
+  const cacheKey = `history:${yahooSymbol}:${period}`;
+  const cached = cacheGet<PriceHistoryResult>(cacheKey);
+  if (cached) return cached;
+
+  const raw = await fetchChartRaw(yahooSymbol, range, interval);
+  const parsed = parseChart(raw);
+  if (parsed.close.length < 2) {
+    throw new Error('종목의 시세 데이터를 충분히 가져오지 못했습니다.');
+  }
+
+  const currency: 'KRW' | 'USD' = parsed.currency === 'USD' ? 'USD' : 'KRW';
+  const fxRate = currency === 'USD' ? await getUsdKrwRate() : 1;
+
+  const sma5Series = sma(parsed.close, 5);
+  const sma20Series = sma(parsed.close, 20);
+  const sma60Series = sma(parsed.close, 60);
+  const rsi14Series = rsi(parsed.close, 14);
+
+  const history: Candle[] = parsed.close.map((nativePrice, i) => {
+    const cross = detectCross(sma5Series[i - 1] ?? null, sma20Series[i - 1] ?? null, sma5Series[i], sma20Series[i]);
+    return {
+      time: new Date(parsed.timestamp[i] * 1000).toISOString(),
+      price: Math.round(nativePrice * fxRate),
+      open: Math.round(parsed.open[i] * fxRate),
+      high: Math.round(parsed.high[i] * fxRate),
+      low: Math.round(parsed.low[i] * fxRate),
+      sma5: sma5Series[i] != null ? Math.round((sma5Series[i] as number) * fxRate) : null,
+      sma20: sma20Series[i] != null ? Math.round((sma20Series[i] as number) * fxRate) : null,
+      sma60: sma60Series[i] != null ? Math.round((sma60Series[i] as number) * fxRate) : null,
+      rsi14: rsi14Series[i],
+      goldenCross: cross === 'golden',
+      deadCross: cross === 'dead',
+    };
+  });
+
+  const result: PriceHistoryResult = { symbol, period, currency, history };
+  cacheSet(cacheKey, result, DAILY_HISTORY_TTL_MS);
+  return result;
 }
 
 export interface ScreeningResult {

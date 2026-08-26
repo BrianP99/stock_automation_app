@@ -1,10 +1,12 @@
 import React from 'react';
 import { Bot, Volume2, Sparkles, FileText, Settings, ShieldCheck, Zap } from 'lucide-react';
+import { CurrencyToggle } from '../lib/currencyDisplay';
 
 interface HeaderProps {
   isTradingActive: boolean;
   fontSizeClass: string;
   setFontSizeClass: (size: string) => void;
+  showCurrencyToggle?: boolean;
   onOpenDailyReport: () => void;
   onOpenSafetySettings: () => void;
   onOpenSmsPreview: () => void;
@@ -15,6 +17,7 @@ export const Header: React.FC<HeaderProps> = ({
   isTradingActive,
   fontSizeClass,
   setFontSizeClass,
+  showCurrencyToggle,
   onOpenDailyReport,
   onOpenSafetySettings,
   onOpenSmsPreview,
@@ -58,6 +61,8 @@ export const Header: React.FC<HeaderProps> = ({
               <span>설정 대기 중</span>
             </div>
           )}
+
+          {showCurrencyToggle && <CurrencyToggle />}
 
           {/* Font Size Selector for Senior Sight */}
           <div className="flex items-center bg-slate-800 rounded-xl p-1 border border-slate-700 text-xs text-slate-300">
