@@ -1,4 +1,4 @@
-import { sma, rsi, detectCross, generateSignal, TradingSignal } from './indicators';
+import { sma, rsi, atr, detectCross, generateSignal, TradingSignal } from './indicators';
 
 // --- Yahoo Finance chart API client (no API key required) --------------------------------
 
@@ -18,6 +18,7 @@ interface ParsedChart {
   open: number[];
   high: number[];
   low: number[];
+  volume: number[];
   currency: string;
   previousClose: number | null;
   exchange: string;
@@ -63,21 +64,24 @@ function parseChart(raw: any): ParsedChart {
   const opensRaw: (number | null)[] = quote.open || [];
   const highsRaw: (number | null)[] = quote.high || [];
   const lowsRaw: (number | null)[] = quote.low || [];
+  const volumesRaw: (number | null)[] = quote.volume || [];
   const timestamp: number[] = [];
   const close: number[] = [];
   const open: number[] = [];
   const high: number[] = [];
   const low: number[] = [];
+  const volume: number[] = [];
   for (let i = 0; i < timestamps.length; i++) {
     if (closesRaw[i] == null) continue; // skip non-trading / missing bars
     timestamp.push(timestamps[i]);
     close.push(closesRaw[i] as number);
-    // Yahoo occasionally omits open/high/low for a bar that still has a close
-    // (e.g. the still-forming current bar) — fall back to close so every
-    // array stays index-aligned with `close`/`timestamp`.
+    // Yahoo occasionally omits open/high/low/volume for a bar that still has
+    // a close (e.g. the still-forming current bar) — fall back to close (0
+    // for volume) so every array stays index-aligned with `close`/`timestamp`.
     open.push(opensRaw[i] ?? (closesRaw[i] as number));
     high.push(highsRaw[i] ?? (closesRaw[i] as number));
     low.push(lowsRaw[i] ?? (closesRaw[i] as number));
+    volume.push(volumesRaw[i] ?? 0);
   }
   return {
     timestamp,
@@ -85,6 +89,7 @@ function parseChart(raw: any): ParsedChart {
     open,
     high,
     low,
+    volume,
     currency: raw.meta?.currency || 'USD',
     previousClose: raw.meta?.chartPreviousClose ?? raw.meta?.previousClose ?? null,
     exchange: normalizeExchange(raw.meta?.fullExchangeName, raw.meta?.exchangeName),
@@ -119,7 +124,9 @@ async function getDailyHistory(symbol: string): Promise<ParsedChart> {
   const key = `daily:${yahooSymbol}`;
   const cached = cacheGet<ParsedChart>(key);
   if (cached) return cached;
-  const raw = await fetchChartRaw(yahooSymbol, '6mo', '1d');
+  // '1y' (not '6mo') so there's enough history for a 200-day trend filter —
+  // ~252 trading days in a year comfortably covers SMA200 with margin.
+  const raw = await fetchChartRaw(yahooSymbol, '1y', '1d');
   const parsed = parseChart(raw);
   cacheSet(key, parsed, DAILY_HISTORY_TTL_MS);
   return parsed;
@@ -192,6 +199,8 @@ export interface StockAnalysis {
   isLive: boolean;
   history: Candle[];
   signal: TradingSignal;
+  /** ATR(14), KRW — how much this specific stock actually moves day to day; used to size stop-loss/trailing-exit distance per stock instead of one flat % for everyone. Null until 15+ bars of history exist. */
+  atrKrw: number | null;
 }
 
 const HISTORY_POINTS_RETURNED = 90;
@@ -226,7 +235,19 @@ export async function getStockAnalysis(symbol: string): Promise<StockAnalysis> {
   const sma5Series = sma(closes, 5);
   const sma20Series = sma(closes, 20);
   const sma60Series = sma(closes, 60);
+  const sma200Series = sma(closes, 200);
   const rsi14Series = rsi(closes, 14);
+  // ATR uses the daily high/low series as-fetched (not the intraday-spliced
+  // `closes`) — a day's worth of staleness doesn't meaningfully change a
+  // 14-day volatility average.
+  const atrSeries = atr(daily.high, daily.low, daily.close, 14);
+  const nativeAtr14 = atrSeries[atrSeries.length - 1];
+  // Volume confirmation: today's volume vs its own 20-day average (volume
+  // isn't intraday-spliced like `closes`, so index off `daily.volume` directly).
+  const volumeAvgSeries = sma(daily.volume, 20);
+  const lastVolIdx = daily.volume.length - 1;
+  const lastVolAvg = lastVolIdx >= 0 ? volumeAvgSeries[lastVolIdx] : null;
+  const volumeRatio = lastVolIdx >= 0 && lastVolAvg ? daily.volume[lastVolIdx] / lastVolAvg : null;
 
   const n = closes.length;
   const signal = generateSignal({
@@ -237,6 +258,8 @@ export async function getStockAnalysis(symbol: string): Promise<StockAnalysis> {
     prevSma5: sma5Series[n - 2] ?? null,
     prevSma20: sma20Series[n - 2] ?? null,
     rsi14: rsi14Series[n - 1],
+    sma200: sma200Series[n - 1],
+    volumeRatio,
   });
 
   const nativeCurrency = daily.currency;
@@ -281,6 +304,7 @@ export async function getStockAnalysis(symbol: string): Promise<StockAnalysis> {
     isLive,
     history: fullHistory.slice(-HISTORY_POINTS_RETURNED),
     signal,
+    atrKrw: nativeAtr14 != null ? Math.round(nativeAtr14 * fxRate) : null,
   };
 }
 
@@ -374,7 +398,12 @@ export async function getScreeningSignal(symbol: string): Promise<ScreeningResul
   const n = closes.length;
   const sma5Series = sma(closes, 5);
   const sma20Series = sma(closes, 20);
+  const sma200Series = sma(closes, 200);
   const rsi14Series = rsi(closes, 14);
+  const volumeAvgSeries = sma(daily.volume, 20);
+  const lastVolIdx = daily.volume.length - 1;
+  const lastVolAvg = lastVolIdx >= 0 ? volumeAvgSeries[lastVolIdx] : null;
+  const volumeRatio = lastVolIdx >= 0 && lastVolAvg ? daily.volume[lastVolIdx] / lastVolAvg : null;
   const signal = generateSignal({
     price: closes[n - 1],
     sma5: sma5Series[n - 1],
@@ -383,6 +412,8 @@ export async function getScreeningSignal(symbol: string): Promise<ScreeningResul
     prevSma5: sma5Series[n - 2] ?? null,
     prevSma20: sma20Series[n - 2] ?? null,
     rsi14: rsi14Series[n - 1],
+    sma200: sma200Series[n - 1],
+    volumeRatio,
   });
   return { symbol, exchange: daily.exchange, signal };
 }

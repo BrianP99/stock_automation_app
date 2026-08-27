@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, ShieldCheck, AlertTriangle, Check, Sliders } from 'lucide-react';
+import { X, ShieldCheck, Activity } from 'lucide-react';
 import { TradingConfig } from '../types';
 
 interface SafetySettingsModalProps {
@@ -15,8 +15,6 @@ export const SafetySettingsModal: React.FC<SafetySettingsModalProps> = ({
   config,
   onUpdateConfig,
 }) => {
-  const [stopLoss, setStopLoss] = useState<number>(config.stopLossPercent);
-  const [targetProfit, setTargetProfit] = useState<number>(config.targetProfitPercent);
   const [maxTrades, setMaxTrades] = useState<number>(config.maxTradesPerDay);
   const [maxPositions, setMaxPositions] = useState<number>(config.maxConcurrentPositions);
 
@@ -24,8 +22,6 @@ export const SafetySettingsModal: React.FC<SafetySettingsModalProps> = ({
 
   const handleSave = () => {
     onUpdateConfig({
-      stopLossPercent: stopLoss,
-      targetProfitPercent: targetProfit,
       maxTradesPerDay: maxTrades,
       maxConcurrentPositions: maxPositions,
     });
@@ -53,47 +49,15 @@ export const SafetySettingsModal: React.FC<SafetySettingsModalProps> = ({
         </div>
 
         <div className="space-y-5">
-          {/* Target Profit */}
-          <div>
-            <label className="text-xs font-bold text-slate-300 block mb-2">
-              목표 익절 수익률 (% 달성 시 매도)
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {[3.0, 5.0, 7.5].map((val) => (
-                <button
-                  key={val}
-                  onClick={() => setTargetProfit(val)}
-                  className={`py-2 px-3 rounded-xl font-bold text-sm border ${
-                    targetProfit === val
-                      ? 'bg-emerald-500 text-slate-950 border-emerald-400'
-                      : 'bg-slate-800 text-slate-300 border-slate-700'
-                  }`}
-                >
-                  +{val}%
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Stop Loss */}
-          <div>
-            <label className="text-xs font-bold text-slate-300 block mb-2">
-              자동 손절 한도 (% 손실 시 차단)
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {[2.0, 3.0, 5.0].map((val) => (
-                <button
-                  key={val}
-                  onClick={() => setStopLoss(val)}
-                  className={`py-2 px-3 rounded-xl font-bold text-sm border ${
-                    stopLoss === val
-                      ? 'bg-red-500 text-white border-red-400'
-                      : 'bg-slate-800 text-slate-300 border-slate-700'
-                  }`}
-                >
-                  -{val}%
-                </button>
-              ))}
+          {/* ATR-based exits — no user-chosen target%/stop% anymore; a flat
+              percentage stopped volatile growth names out on ordinary noise
+              while leaving calm stocks with a stop too loose. */}
+          <div className="bg-slate-800/60 border border-slate-700 rounded-2xl p-4 flex items-start gap-3">
+            <Activity className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <div className="text-xs text-slate-300 leading-relaxed">
+              <span className="font-bold text-white">손절/청산은 종목별 변동성(ATR) 기반 자동 설정</span>으로 바뀌었습니다.
+              매수 시점 각 종목의 실제 변동폭을 계산해 손절선을 종목마다 다르게 잡고, 수익 구간에서는 고정 목표가
+              아니라 고점 대비 하락폭으로 추적 청산합니다.
             </div>
           </div>
 

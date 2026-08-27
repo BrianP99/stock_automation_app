@@ -1,13 +1,14 @@
 export type Market = 'KRX' | 'US';
 
-export type RiskLevel = 'SAFE' | 'BALANCED' | 'AGGRESSIVE';
-
-/** Portfolio-level configuration. No single stock here anymore — the AI picks everything. */
+/**
+ * Portfolio-level configuration. No single stock here anymore — the AI picks
+ * everything, including per-position stop-loss/exit distance (ATR-based, see
+ * Position.atrAtEntryKrw) — there's no user-chosen risk profile or fixed
+ * target%/stop% anymore, since a flat percentage was either too tight for
+ * volatile growth names or too loose for calm ones.
+ */
 export interface TradingConfig {
   investmentAmount: number; // KRW
-  riskLevel: RiskLevel;
-  targetProfitPercent: number; // per-position, e.g. 4.5%
-  stopLossPercent: number; // per-position, e.g. 2.5%
   autoTradingEnabled: boolean;
   maxTradesPerDay: number;
   maxConcurrentPositions: number; // 3-5
@@ -26,6 +27,10 @@ export interface Position {
   avgBuyPriceNative: number;
   avgBuyPriceKrw: number;
   openedAt: string;
+  /** ATR(14) in KRW at the moment this position was opened, frozen for its lifetime — sizes the stop-loss/trailing-exit distance to this stock's own volatility. */
+  atrAtEntryKrw: number;
+  /** Highest price (KRW) seen since this position opened — the trailing-exit reference point (locks in gains without capping upside at a fixed target%). */
+  highestPriceKrwSinceOpen: number;
 }
 
 /** One row in the "알림 로그" — every attempted Discord push, success or failure. */
@@ -97,6 +102,7 @@ export interface StockAnalysisResponse {
   isLive: boolean;
   history: ChartPoint[];
   signal: TradingSignal;
+  atrKrw: number | null;
 }
 
 /** A symbol the scanner currently likes, shown in the watchlist panel for transparency. */

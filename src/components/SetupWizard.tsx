@@ -1,32 +1,82 @@
 import React, { useState } from 'react';
-import { RiskLevel, TradingConfig } from '../types';
+import { TradingConfig } from '../types';
 import { PRESET_AMOUNTS } from '../data/popularStocks';
-import { ShieldCheck, Sparkles, Play, ArrowRight, Bot, Globe2 } from 'lucide-react';
+import { ShieldCheck, Sparkles, Play, ArrowRight, Bot, TrendingUp, Ruler, Anchor, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface SetupWizardProps {
   onStartTrading: (config: TradingConfig) => void;
   fontSizeClass: string;
 }
 
-const RISK_PRESETS: Record<RiskLevel, { targetProfit: number; stopLoss: number }> = {
-  SAFE: { targetProfit: 3.5, stopLoss: 2.0 },
-  BALANCED: { targetProfit: 5.0, stopLoss: 3.0 },
-  AGGRESSIVE: { targetProfit: 7.5, stopLoss: 4.5 },
-};
+interface MethodologyItem {
+  term: string;
+  desc: string;
+}
+
+interface MethodologyPage {
+  heading: string;
+  items: MethodologyItem[];
+}
+
+// AI 판단 기준 — every term the AI actually uses, each with a plain-language
+// explanation, split into 3 short pages instead of one long scroll.
+const METHODOLOGY_PAGES: MethodologyPage[] = [
+  {
+    heading: '무엇을, 언제 살까',
+    items: [
+      { term: '감시 대상', desc: '국내외 우량주 약 200개를 5분마다 재스캔해요 (레버리지·인버스 제외).' },
+      {
+        term: '골든크로스',
+        desc: '최근 5일 평균가가 20일 평균가를 위로 뚫는 순간이에요. "흐름이 방금 상승으로 바뀌었다"는 뜻이라 매수 후보로 봐요.',
+      },
+      {
+        term: 'RSI · 과열/침체 지표',
+        desc: '최근 며칠간 얼마나 급하게 오르내렸는지 0~100 숫자로 나타내요. 70 넘으면 "너무 급하게 올랐다", 30 밑이면 "너무 급하게 빠졌다"는 신호예요.',
+      },
+    ],
+  },
+  {
+    heading: '진짜 신호인지 확인',
+    items: [
+      {
+        term: '200일선 · 장기 추세 필터',
+        desc: '최근 200일(약 10개월) 평균가예요. 주가가 이 선보다 낮으면, 골든크로스가 떠도 가짜 신호일 수 있어서 매수를 보류해요.',
+      },
+      { term: '거래량 확인', desc: '평소보다 사고파는 사람이 확 늘었을 때 나온 신호는 더 믿을 만해서, 신뢰도 점수를 더 얹어줘요.' },
+      {
+        term: 'ATR · 변동성 지표',
+        desc: '이 종목이 하루에 보통 얼마나 오르내리는지 나타내는 숫자예요. 성장주는 크고 대형주는 작아요. 아래 손절선·청산·투자금 배분이 전부 이 숫자 기준이에요.',
+      },
+    ],
+  },
+  {
+    heading: '돈은 어떻게 지킬까',
+    items: [
+      {
+        term: '자동 손절선 (진입가 − ATR×2)',
+        desc: '산 가격에서 평소 변동폭의 2배만큼 떨어지면 자동으로 팔아요. 종목마다 폭이 달라서 정상적인 등락에 억울하게 팔리지 않아요.',
+      },
+      {
+        term: '트레일링 청산 (고점 − ATR×2.5)',
+        desc: '목표가에 닿아도 무조건 안 팔아요. 최고가에서 ATR의 2.5배만큼 빠질 때 팔아서, 더 오를 기회를 열어둬요.',
+      },
+      {
+        term: '투자금 배분 & 안전장치',
+        desc: '손절당해도 전체 자산의 1%만 잃도록 종목마다 사는 금액을 다르게 정해요. 하루 매매 횟수 제한, 언제든 일시정지·긴급 매도도 가능해요.',
+      },
+    ],
+  },
+];
 
 export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSizeClass }) => {
   const [investmentAmount, setInvestmentAmount] = useState<number>(1000000);
-  const [riskLevel, setRiskLevel] = useState<RiskLevel>('SAFE');
   const [maxConcurrentPositions, setMaxConcurrentPositions] = useState<number>(4);
   const [isStarting, setIsStarting] = useState<boolean>(false);
+  const [methodologyPage, setMethodologyPage] = useState<number>(0);
 
   const handleStart = async () => {
-    const preset = RISK_PRESETS[riskLevel];
     const config: TradingConfig = {
       investmentAmount,
-      riskLevel,
-      targetProfitPercent: preset.targetProfit,
-      stopLossPercent: preset.stopLoss,
       autoTradingEnabled: true,
       maxTradesPerDay: 10,
       maxConcurrentPositions,
@@ -52,20 +102,18 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
   return (
     <div className={`max-w-6xl mx-auto px-4 py-6 ${fontSizeClass}`}>
       {/* Welcome Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-3xl p-6 sm:p-8 text-white border border-slate-700 shadow-xl mb-8 relative overflow-hidden">
+      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 rounded-3xl px-6 py-5 sm:px-8 sm:py-6 text-white border border-slate-700 shadow-xl mb-5 relative overflow-hidden">
         <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10">
-          <div className="inline-flex items-center space-x-2 bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full text-sm font-semibold border border-emerald-500/30 mb-3">
+          <div className="inline-flex items-center space-x-2 bg-emerald-500/20 text-emerald-300 px-3 py-1 rounded-full text-sm font-semibold border border-emerald-500/30 mb-2.5">
             <Bot className="w-4 h-4 text-emerald-400" />
             <span>완전 자동 AI 매매</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white mb-2">
-            종목 선택은 필요 없습니다 — <span className="text-emerald-400">AI가 직접</span> 고릅니다
+          <h2 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white mb-1.5">
+            종목 고민은 이제 그만 — <span className="text-emerald-400">AI가 다 골라드려요</span>
           </h2>
-          <p className="text-slate-300 leading-relaxed max-w-xl">
-            <Globe2 className="w-4 h-4 inline mr-1 mb-0.5" />
-            국내(코스피·코스닥)와 미국(나스닥·S&P500)의 대장주·유망주 약 200개 종목을 5분마다 스캔하여, 이동평균선·RSI 등
-            기술적 지표로 매수/매도 타이밍을 감정 없이 규칙 기반으로 판단합니다. 투자금과 위험 성향만 정해주세요.
+          <p className="text-slate-300 leading-relaxed text-sm max-w-2xl">
+            국내외 우량주 약 200개를 5분마다 확인해서 정해진 규칙대로만 사고팝니다. 투자금과 종목 수만 정해주시면 끝!
           </p>
         </div>
       </div>
@@ -73,129 +121,122 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
       {/* Below lg: single narrow column (phone/tablet). At lg+: form column + a
           right rail that fills the space a fixed-width form would otherwise
           leave empty on wide desktop screens. */}
-      <div className="lg:grid lg:grid-cols-[1fr_340px] lg:gap-8 lg:items-start">
-      <div className="max-w-3xl space-y-8">
-        {/* STEP 1: Investment Amount */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">
-          <div className="flex items-center space-x-3 mb-6">
-            <span className="w-9 h-9 rounded-2xl bg-emerald-600 text-white font-black flex items-center justify-center text-lg shadow-md shadow-emerald-600/20">
-              1
-            </span>
-            <h3 className="text-xl sm:text-2xl font-bold text-slate-900">투자 금액</h3>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 mb-5">
-            {PRESET_AMOUNTS.map((preset) => (
-              <button
-                key={preset.value}
-                onClick={() => setInvestmentAmount(preset.value)}
-                className={`py-3 px-4 rounded-2xl font-bold text-center border-2 whitespace-nowrap break-keep transition-all ${
-                  investmentAmount === preset.value
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg shadow-emerald-600/20 scale-105'
-                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                }`}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-          <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-4">
-            <span className="text-sm font-bold text-slate-700 shrink-0">직접 입력 금액</span>
-            <div className="relative flex-1 max-w-xs">
-              <input
-                type="text"
-                inputMode="numeric"
-                value={investmentAmount.toLocaleString('ko-KR')}
-                onChange={(e) => {
-                  const digitsOnly = e.target.value.replace(/[^0-9]/g, '');
-                  setInvestmentAmount(Number(digitsOnly) || 0);
-                }}
-                onBlur={() => setInvestmentAmount((v) => Math.max(100000, v))}
-                className="w-full text-right font-black text-xl text-emerald-700 bg-white border border-slate-300 rounded-xl py-2 pl-3 pr-10 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-bold text-slate-500 pointer-events-none">원</span>
+      <div className="lg:grid lg:grid-cols-[1fr_320px] lg:gap-6 lg:items-start">
+      <div className="space-y-5">
+        {/* STEP 1 + 2, side by side on desktop so this fits in one screen. */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* STEP 1: Investment Amount */}
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm">
+            <div className="flex items-center space-x-2.5 mb-4">
+              <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white font-black flex items-center justify-center shadow-md shadow-emerald-600/20">
+                1
+              </span>
+              <h3 className="text-lg font-bold text-slate-900">투자 금액</h3>
             </div>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {PRESET_AMOUNTS.map((preset) => (
+                <button
+                  key={preset.value}
+                  onClick={() => setInvestmentAmount(preset.value)}
+                  className={`py-2.5 px-2 rounded-xl font-bold text-sm text-center border-2 whitespace-nowrap break-keep transition-all ${
+                    investmentAmount === preset.value
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/20'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-slate-600 shrink-0">직접 입력</span>
+              <div className="relative flex-1 max-w-[160px]">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={investmentAmount.toLocaleString('ko-KR')}
+                  onChange={(e) => {
+                    const digitsOnly = e.target.value.replace(/[^0-9]/g, '');
+                    setInvestmentAmount(Number(digitsOnly) || 0);
+                  }}
+                  onBlur={() => setInvestmentAmount((v) => Math.max(100000, v))}
+                  className="w-full text-right font-black text-base text-emerald-700 bg-white border border-slate-300 rounded-lg py-1.5 pl-2 pr-8 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+                <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-500 pointer-events-none">원</span>
+              </div>
+            </div>
+          </div>
+
+          {/* STEP 2: Max Concurrent Positions */}
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm">
+            <div className="flex items-center space-x-2.5 mb-4">
+              <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white font-black flex items-center justify-center shadow-md shadow-emerald-600/20">
+                2
+              </span>
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">동시 보유 종목 수</h3>
+                <p className="text-xs text-slate-500">투자금을 몇 종목에 나눠 담을지</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  onClick={() => setMaxConcurrentPositions(n)}
+                  className={`py-3.5 rounded-xl font-black text-base border-2 transition-all ${
+                    maxConcurrentPositions === n
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-md'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {n}개
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">
+              종목 수가 많을수록 한 종목당 들어가는 돈은 줄어서, 한 종목이 흔들려도 전체 충격은 작아져요.
+            </p>
           </div>
         </div>
 
-        {/* STEP 2: Risk Level */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">
-          <div className="flex items-center space-x-3 mb-6">
-            <span className="w-9 h-9 rounded-2xl bg-emerald-600 text-white font-black flex items-center justify-center text-lg shadow-md shadow-emerald-600/20">
-              2
-            </span>
-            <div>
-              <h3 className="text-xl sm:text-2xl font-bold text-slate-900">투자 성향</h3>
-              <p className="text-sm text-slate-500">AI가 종목별로 이 목표 수익/손절선 범위 내에서만 매매합니다.</p>
+        {/* Beginner-friendly explainer for the ATR-based auto exit — no risk-profile
+            picker anymore; a flat stop% for every stock either cut growth names
+            out on ordinary noise or left calm stocks with a stop too loose. */}
+        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-3xl p-5 sm:p-6 border border-emerald-200">
+          <h3 className="text-base sm:text-lg font-bold text-slate-900 mb-3">손절선, AI가 종목마다 다르게 그어요</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="bg-white/70 rounded-2xl p-3.5 flex gap-2.5">
+              <Ruler className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-slate-700 leading-relaxed">
+                <b>왜?</b> 잘 출렁이는 성장주와 잔잔한 대형주를 똑같은 기준(예: -2%)으로 자르면, 성장주는 정상적으로
+                움직였을 뿐인데 억울하게 팔려버려요.
+              </p>
             </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {(
-              [
-                { level: 'SAFE' as const, emoji: '🛡️', badge: '추천 (가장 안전)', title: '안정 수익형', desc: '원금 보존을 최우선으로, 짧고 확실한 수익을 챙깁니다.' },
-                { level: 'BALANCED' as const, emoji: '⚖️', badge: '표준 추세', title: '균형 추세형', desc: '수익과 손실 방지의 균형을 유지합니다.' },
-                { level: 'AGGRESSIVE' as const, emoji: '🚀', badge: '적극 트레이딩', title: '적극 성장형', desc: '변동성이 클 때 적극적으로 이익 창출을 도모합니다.' },
-              ]
-            ).map((opt) => (
-              <button
-                key={opt.level}
-                onClick={() => setRiskLevel(opt.level)}
-                className={`p-5 rounded-2xl border-2 text-left transition-all ${
-                  riskLevel === opt.level ? 'bg-emerald-50 border-emerald-500 shadow-md ring-2 ring-emerald-500/20' : 'bg-white border-slate-200 hover:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-2xl">{opt.emoji}</span>
-                  <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800">{opt.badge}</span>
-                </div>
-                <h4 className="text-lg font-bold text-slate-900">{opt.title}</h4>
-                <p className="text-xs text-slate-600 mt-1">{opt.desc}</p>
-                <div className="mt-4 pt-3 border-t border-slate-200/60 flex justify-between text-xs font-bold">
-                  <span className="text-emerald-700">종목별 목표 익절: +{RISK_PRESETS[opt.level].targetProfit}%</span>
-                  <span className="text-slate-500">손절: -{RISK_PRESETS[opt.level].stopLoss}%</span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* STEP 3: Max Concurrent Positions */}
-        <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-sm">
-          <div className="flex items-center space-x-3 mb-6">
-            <span className="w-9 h-9 rounded-2xl bg-emerald-600 text-white font-black flex items-center justify-center text-lg shadow-md shadow-emerald-600/20">
-              3
-            </span>
-            <div>
-              <h3 className="text-xl sm:text-2xl font-bold text-slate-900">동시 보유 종목 수</h3>
-              <p className="text-sm text-slate-500">투자금을 몇 개 종목으로 나눠서 분산 투자할지 정해주세요.</p>
+            <div className="bg-white/70 rounded-2xl p-3.5 flex gap-2.5">
+              <Anchor className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-slate-700 leading-relaxed">
+                <b>그래서</b> 매수할 때 그 종목이 평소 하루에 얼마나 움직이는지(변동성) 계산해서, 종목마다 손절선을
+                다르게 잡아요.
+              </p>
             </div>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            {[3, 4, 5].map((n) => (
-              <button
-                key={n}
-                onClick={() => setMaxConcurrentPositions(n)}
-                className={`py-4 rounded-2xl font-black text-lg border-2 transition-all ${
-                  maxConcurrentPositions === n ? 'bg-emerald-600 text-white border-emerald-600 shadow-lg scale-105' : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
-              >
-                {n}개 종목
-              </button>
-            ))}
+            <div className="bg-white/70 rounded-2xl p-3.5 flex gap-2.5">
+              <TrendingUp className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-slate-700 leading-relaxed">
+                <b>오를 때는</b> 목표가에 닿았다고 무조건 팔지 않아요. 최고점에서 일정 폭 이상 빠질 때까지 기다렸다가
+                팔아서, 더 오를 기회를 열어둬요.
+              </p>
+            </div>
           </div>
         </div>
 
         {/* Info card */}
         <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center space-x-3 text-slate-600 text-sm">
           <ShieldCheck className="w-6 h-6 text-emerald-500 shrink-0" />
-          <span>
-            매수는 100% AI 규칙 기반 판단으로만 이루어집니다. 원하시면 언제든 전체 일시정지, 전량 매도, 또는 특정 종목만 긴급
-            매도할 수 있습니다.
-          </span>
+          <span>매수는 전부 AI 규칙으로만 결정돼요. 마음 바뀌면 언제든 일시정지하거나 전량 매도할 수 있습니다.</span>
         </div>
 
         {/* START BUTTON */}
-        <div className="pt-2">
+        <div className="pt-1">
           <button
             onClick={handleStart}
             disabled={isStarting}
@@ -220,44 +261,66 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
         </div>
       </div>
 
-      {/* Desktop-only right rail — hidden below lg so phones/tablets are unaffected. */}
-      <aside className="hidden lg:flex lg:flex-col lg:sticky lg:top-6 gap-4">
-        <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl">
-          <div className="flex items-center gap-2 mb-4">
+      {/* Desktop-only right rail — hidden below lg so phones/tablets are unaffected.
+          A fixed-height, paginated card (was one long scrolling list) so the
+          whole setup screen fits without scrolling — 3 short pages instead
+          of 9 items stacked end to end. */}
+      <aside className="hidden lg:block lg:sticky lg:top-6">
+        <div className="bg-slate-900 text-white rounded-3xl p-5 border border-slate-800 shadow-xl h-[700px] flex flex-col">
+          <div className="flex items-center gap-2 mb-1">
             <Sparkles className="w-5 h-5 text-emerald-400" />
-            <h4 className="font-bold text-lg">AI 스캔 시스템</h4>
+            <h4 className="font-bold text-base">AI 판단 기준</h4>
           </div>
-          <dl className="space-y-4 text-sm">
-            <div>
-              <dt className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">감시 대상</dt>
-              <dd className="text-slate-200 leading-relaxed">
-                코스피·코스닥 대장주 + 나스닥·S&P500 대장주, 약 200개 종목 (단일 종목·비레버리지)
-              </dd>
-            </div>
-            <div>
-              <dt className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">판단 지표</dt>
-              <dd className="text-slate-200 leading-relaxed">5·20일 이동평균선, RSI(14), 골든크로스·데드크로스</dd>
-            </div>
-            <div>
-              <dt className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-1">스캔 주기</dt>
-              <dd className="text-slate-200 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                5분마다 전체 재스캔
-              </dd>
-            </div>
-          </dl>
-        </div>
+          <p className="text-xs text-slate-400 mb-4">지금 이 시스템이 실제로 쓰는 기준을 쉽게 풀어서 설명해요.</p>
 
-        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
-          <h4 className="font-bold text-slate-900 mb-3 flex items-center gap-2">
-            <ShieldCheck className="w-5 h-5 text-emerald-600" />
-            안전장치
-          </h4>
-          <ul className="space-y-2 text-sm text-slate-600">
-            <li>· 종목별 개별 손절/익절 (전체 포트폴리오 손익 아님)</li>
-            <li>· 일일 최대 매매 횟수 제한</li>
-            <li>· 언제든 일시정지 / 특정 종목 긴급 매도</li>
-          </ul>
+          <div className="flex-1 min-h-0">
+            <div className="text-emerald-300 font-bold text-sm mb-3 flex items-center gap-1.5">
+              <span className="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-[11px]">
+                {methodologyPage + 1}
+              </span>
+              {METHODOLOGY_PAGES[methodologyPage].heading}
+            </div>
+            <dl className="space-y-4 text-[13px]">
+              {METHODOLOGY_PAGES[methodologyPage].items.map((item) => (
+                <div key={item.term}>
+                  <dt className="text-white font-bold mb-1">{item.term}</dt>
+                  <dd className="text-slate-300 leading-relaxed">{item.desc}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+
+          {/* Page nav */}
+          <div className="flex items-center justify-between pt-4 mt-2 border-t border-slate-800">
+            <button
+              onClick={() => setMethodologyPage((p) => Math.max(0, p - 1))}
+              disabled={methodologyPage === 0}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 text-slate-300 transition-colors"
+              title="이전"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <div className="flex items-center gap-1.5">
+              {METHODOLOGY_PAGES.map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setMethodologyPage(i)}
+                  className={`h-1.5 rounded-full transition-all ${
+                    i === methodologyPage ? 'w-5 bg-emerald-400' : 'w-1.5 bg-slate-700 hover:bg-slate-600'
+                  }`}
+                  title={`${i + 1}페이지`}
+                />
+              ))}
+            </div>
+            <button
+              onClick={() => setMethodologyPage((p) => Math.min(METHODOLOGY_PAGES.length - 1, p + 1))}
+              disabled={methodologyPage === METHODOLOGY_PAGES.length - 1}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-30 disabled:hover:bg-slate-800 text-slate-300 transition-colors"
+              title="다음"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </aside>
       </div>
