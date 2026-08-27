@@ -1,6 +1,7 @@
 import type { Config } from '@netlify/functions';
 import { seoulDateString } from '../../server/tradingEngine';
 import { saveCurrentSession, getCurrentSession, type StoredSession } from '../../server/sessionStore';
+import { notifyDiscordSummary } from '../../server/discord';
 import type { TradingConfig } from '../../src/types';
 
 // Starts a new persistent, fully-autonomous paper-trading session — no stock
@@ -49,6 +50,19 @@ export default async (req: Request) => {
     lastTickAt: null,
     lastError: null,
   };
+
+  const notifyResult = await notifyDiscordSummary(session.portfolio, [], '🚀 AI 자동매매 시작');
+  session.notificationLog = [
+    {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      kind: 'summary',
+      title: 'AI 자동매매 시작',
+      detail: `투자금 ${config.investmentAmount.toLocaleString('ko-KR')}원으로 세션을 시작했습니다.`,
+      ok: notifyResult.ok,
+      ...(notifyResult.ok ? {} : { error: notifyResult.error || `HTTP ${notifyResult.status}` }),
+    },
+  ];
 
   await saveCurrentSession(session);
   return new Response(JSON.stringify(session), { headers: { 'Content-Type': 'application/json' } });

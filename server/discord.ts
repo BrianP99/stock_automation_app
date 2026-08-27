@@ -76,10 +76,15 @@ export interface PositionWithLivePrice {
   currentPriceKrw: number;
 }
 
-/** On-demand portfolio snapshot ("지금 요약 보내기") — current valuation, P&L, and each held position's live price/return. */
+/**
+ * Portfolio snapshot — current valuation, P&L, and each held position's live
+ * price/return. Used by the on-demand "지금 요약 보내기" button as well as the
+ * automatic 시작/종료 notifications (with a different title for each).
+ */
 export async function notifyDiscordSummary(
   portfolio: PortfolioState,
-  positions: PositionWithLivePrice[]
+  positions: PositionWithLivePrice[],
+  titleOverride?: string
 ): Promise<DiscordNotifyResult> {
   const isProfit = portfolio.totalPnL >= 0;
 
@@ -96,7 +101,7 @@ export async function notifyDiscordSummary(
     : '보유 종목 없음 (현금 대기 중)';
 
   const embed = {
-    title: '📊 포트폴리오 요약',
+    title: titleOverride ?? '📊 포트폴리오 요약',
     color: isProfit ? 0xef4444 : 0x3b82f6,
     fields: [
       { name: '총 평가금액', value: `${Math.round(portfolio.currentValuation).toLocaleString('ko-KR')}원`, inline: true },
