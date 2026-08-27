@@ -127,10 +127,13 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cosmetic-only: celebrate once per session when target profit is reached.
+  // Cosmetic-only: celebrate once per session on a solid overall gain — there's
+  // no single config-defined "target profit" anymore since exits are now
+  // per-position and ATR-based rather than one flat percentage.
+  const CELEBRATION_PNL_PERCENT = 5;
   useEffect(() => {
     if (!session) return;
-    if (session.portfolio.totalPnLPercent >= session.config.targetProfitPercent && !hasCelebrated.current) {
+    if (session.portfolio.totalPnLPercent >= CELEBRATION_PNL_PERCENT && !hasCelebrated.current) {
       hasCelebrated.current = true;
       confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
     }
@@ -237,7 +240,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
               <span className={`w-2.5 h-2.5 rounded-full ${isPaused ? 'bg-slate-500' : 'bg-emerald-400 animate-ping'}`} />
               <h3 className="text-xl font-black text-white">AI 자동매매 가동 중</h3>
               <span className="text-xs bg-emerald-500/20 text-emerald-300 px-2.5 py-0.5 rounded-full font-bold border border-emerald-500/30">
-                {config.riskLevel === 'SAFE' ? '안정형 🛡️' : config.riskLevel === 'BALANCED' ? '균형형 ⚖️' : '성장형 🚀'}
+                변동성 기반 자동 리스크 관리
               </span>
               <span className="text-xs bg-slate-700/60 text-slate-200 px-2.5 py-0.5 rounded-full font-bold border border-slate-600">
                 보유 {portfolio.positions.length}/{config.maxConcurrentPositions}종목
@@ -330,7 +333,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
               수익률 {isProfit ? '+' : ''}
               {portfolio.totalPnLPercent}%
             </span>
-            <span className="text-xs text-slate-500">종목별 목표: +{config.targetProfitPercent}%</span>
+            <span className="text-xs text-slate-500">청산: 고점 대비 하락폭(트레일링)</span>
           </div>
         </div>
 
@@ -358,7 +361,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
             </div>
           </div>
           <div className="mt-3 pt-2 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between">
-            <span>종목별 자동 손절: -{config.stopLossPercent}%</span>
+            <span>손절: 종목별 변동성(ATR) 기반</span>
             <span className="text-emerald-400 font-bold">안전 작동 중</span>
           </div>
         </div>

@@ -12,9 +12,6 @@ import { ChartModalProvider } from './lib/chartModal';
 
 const DEFAULT_CONFIG: TradingConfig = {
   investmentAmount: 1000000,
-  riskLevel: 'SAFE',
-  targetProfitPercent: 3.5,
-  stopLossPercent: 2.0,
   autoTradingEnabled: false,
   maxTradesPerDay: 10,
   maxConcurrentPositions: 4,
@@ -22,7 +19,9 @@ const DEFAULT_CONFIG: TradingConfig = {
 
 export default function App() {
   const [tradingConfig, setTradingConfig] = useState<TradingConfig | null>(null);
-  const [fontSizeClass, setFontSizeClass] = useState<string>('text-lg');
+  // No longer user-adjustable (the header's font-size picker was removed) — kept as
+  // a constant since SetupWizard/TradingDashboard still take it as a sizing prop.
+  const fontSizeClass = 'text-lg';
   const [isCheckingSession, setIsCheckingSession] = useState<boolean>(true);
 
   const [isDailyReportOpen, setIsDailyReportOpen] = useState<boolean>(false);
@@ -73,9 +72,6 @@ export default function App() {
     <ChartModalProvider>
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500 selection:text-slate-950 antialiased">
       <Header
-        isTradingActive={!!tradingConfig?.autoTradingEnabled}
-        fontSizeClass={fontSizeClass}
-        setFontSizeClass={setFontSizeClass}
         showCurrencyToggle={!!tradingConfig}
         onOpenDailyReport={() => setIsDailyReportOpen(true)}
         onOpenSafetySettings={() => setIsSafetySettingsOpen(true)}

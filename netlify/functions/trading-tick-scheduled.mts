@@ -94,8 +94,6 @@ export default async () => {
 
     // 4) Run the deterministic multi-position decision.
     const result = runPortfolioTick(resetPortfolio, heldAnalyses, candidateAnalyses, {
-      targetProfitPercent: session.config.targetProfitPercent,
-      stopLossPercent: session.config.stopLossPercent,
       maxTradesPerDay: session.config.maxTradesPerDay,
       maxConcurrentPositions: session.config.maxConcurrentPositions,
     });
