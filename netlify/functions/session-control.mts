@@ -2,7 +2,7 @@ import type { Config } from '@netlify/functions';
 import { getStockAnalysis } from '../../server/marketData';
 import { sellPositionNow } from '../../server/tradingEngine';
 import { getCurrentSession, saveCurrentSession } from '../../server/sessionStore';
-import { notifyDiscordTrade, notifyDiscordTrades } from '../../server/discord';
+import { notifyDiscordTrade, notifyDiscordTrades, notifyDiscordSummary } from '../../server/discord';
 import type { TradingConfig } from '../../src/types';
 
 type Action = 'pause' | 'resume' | 'exit' | 'update-config' | 'sell-position';
@@ -117,6 +117,24 @@ export default async (req: Request) => {
       session.isActive = false;
       session.isPaused = false;
       session.latestAiMessage = '사용자 요청으로 전량 매도 후 자동매매를 종료했습니다.';
+
+      const finalPnL = session.portfolio.totalPnL;
+      const summaryNotifyResult = await notifyDiscordSummary(session.portfolio, [], '🏁 AI 자동매매 종료 — 최종 결과');
+      session.notificationLog = [
+        {
+          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: new Date().toISOString(),
+          kind: 'summary',
+          title: '자동매매 종료 — 최종 결과',
+          detail: `최종 손익 ${finalPnL >= 0 ? '+' : ''}${Math.round(finalPnL).toLocaleString('ko-KR')}원 (${
+            finalPnL >= 0 ? '+' : ''
+          }${session.portfolio.totalPnLPercent}%)`,
+          ok: summaryNotifyResult.ok,
+          ...(summaryNotifyResult.ok ? {} : { error: summaryNotifyResult.error || `HTTP ${summaryNotifyResult.status}` }),
+        },
+        ...(session.notificationLog || []),
+      ];
+
       await saveCurrentSession(session);
       return new Response(JSON.stringify(session), { headers: { 'Content-Type': 'application/json' } });
     }
