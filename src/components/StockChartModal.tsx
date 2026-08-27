@@ -10,6 +10,11 @@ const PERIODS: Period[] = ['day', 'week', 'month', 'year'];
 const PERIOD_LABEL: Record<Period, string> = { day: '일', week: '주', month: '월', year: '년' };
 const PERIOD_STORAGE_KEY = 'chartPeriod';
 
+// Shown as quick-pick chips before the user types anything — a mix of
+// well-known names and sector/keyword searches, so it's obvious search isn't
+// limited to exact tickers or English names.
+const SUGGESTED_SEARCHES = ['삼성전자', 'NVIDIA', '테슬라', '애플', '반도체', 'AI', '2차전지', '바이오'];
+
 interface UniverseSymbol {
   symbol: string;
   name: string;
@@ -46,6 +51,28 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({ symbol, name, 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UniverseSymbol[]>([]);
   const searchAbortRef = useRef<AbortController | null>(null);
+
+  // Sector + one-line description for the header — Position/TradeOrder/etc.
+  // don't all carry this, so the modal looks it up itself via the same
+  // universe-search endpoint (an exact-symbol query always ranks that stock
+  // first), rather than threading sector/description through every caller.
+  const [activeMeta, setActiveMeta] = useState<{ sector: string; description: string } | null>(null);
+  useEffect(() => {
+    setActiveMeta(null);
+    if (!active) return;
+    let cancelled = false;
+    fetch(`/api/universe/search?q=${encodeURIComponent(active.symbol)}`)
+      .then((res) => (res.ok ? res.json() : { results: [] }))
+      .then((data: { results?: UniverseSymbol[] }) => {
+        if (cancelled) return;
+        const match = (data.results || []).find((r) => r.symbol === active.symbol);
+        if (match) setActiveMeta({ sector: match.sector, description: match.description });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [active?.symbol]);
 
   const isPickerEntry = !symbol; // opened via the floating button, not a specific row
 
@@ -136,10 +163,18 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({ symbol, name, 
                 <ArrowLeft className="w-4 h-4" />
               </button>
             )}
-            {active && <CompanyLogo symbol={active.symbol} name={active.name} size={32} />}
-            <div>
-              <h3 className="text-lg font-extrabold text-slate-900">{active ? active.name : '내 종목 · 실시간 차트'}</h3>
-              {active && <p className="text-xs text-slate-400 font-mono">{active.symbol}</p>}
+            {active && <CompanyLogo symbol={active.symbol} name={active.name} size={32} className="mt-0.5" />}
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-lg font-extrabold text-slate-900">{active ? active.name : '내 종목 · 실시간 차트'}</h3>
+                {active && <span className="text-xs text-slate-400 font-mono">{active.symbol}</span>}
+                {activeMeta?.sector && (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                    {activeMeta.sector}
+                  </span>
+                )}
+              </div>
+              {activeMeta?.description && <p className="text-xs text-slate-500 mt-0.5">{activeMeta.description}</p>}
             </div>
           </div>
           <button onClick={onClose} className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600" title="닫기">
@@ -205,7 +240,23 @@ export const StockChartModal: React.FC<StockChartModalProps> = ({ symbol, name, 
               ) : query ? (
                 <p className="text-sm text-slate-500 text-center py-8">검색 결과가 없습니다.</p>
               ) : (
-                <p className="text-sm text-slate-400 text-center py-8">AI가 감시하는 약 200개 대장주/유망주 범위 내에서 검색됩니다.</p>
+                <div className="py-4">
+                  <p className="text-xs text-slate-400 mb-2.5">
+                    종목명(한글·영문)이나 코드는 물론, "반도체" "AI"처럼 업종·키워드로도 찾을 수 있어요.
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SUGGESTED_SEARCHES.map((term) => (
+                      <button
+                        key={term}
+                        onClick={() => handleSearch(term)}
+                        className="px-3 py-1.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200 hover:border-emerald-200 transition-colors"
+                      >
+                        {term}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-4">AI가 감시하는 약 200개 대장주/유망주 범위 내에서 검색됩니다.</p>
+                </div>
               )}
             </div>
           ) : (

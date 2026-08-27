@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import { getStockAnalysis, getQuotes, getPriceHistory, type ChartPeriod } from './server/marketData';
-import { TRADING_UNIVERSE } from './server/data/curatedUniverse';
+import { searchUniverse } from './server/universeSearch';
 import {
   buildExplainSignalPrompt,
   EXPLAIN_SIGNAL_SCHEMA,
@@ -82,12 +82,7 @@ async function startServer() {
 
   // API: Search the curated trading universe (for the "view any stock" search panel)
   app.get('/api/universe/search', (req, res) => {
-    const q = String(req.query.q || '').trim().toLowerCase();
-    if (!q) return res.json({ results: [] });
-    const results = TRADING_UNIVERSE.filter(
-      (u) => u.symbol.toLowerCase().includes(q) || u.name.toLowerCase().includes(q)
-    ).slice(0, 20);
-    return res.json({ results });
+    return res.json({ results: searchUniverse(String(req.query.q || '')) });
   });
 
   // API: Explain a signal already decided by the technical-indicator engine (/api/stock/analysis).
