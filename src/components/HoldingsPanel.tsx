@@ -55,6 +55,9 @@ export const HoldingsPanel: React.FC<HoldingsPanelProps> = ({ positions, onSellP
         const analysis = analyses[position.symbol];
         const currentPrice = analysis?.price ?? position.avgBuyPriceKrw;
         const currentPriceNative = analysis?.nativePrice ?? position.avgBuyPriceNative;
+        // 평가금액 — 증권사 앱들이 보유종목에서 가장 크게 보여주는 숫자 (현재가가 아니라 "이 종목 지금 총 얼마").
+        const marketValue = currentPrice * position.quantity;
+        const marketValueNative = currentPriceNative * position.quantity;
         const pnl = (currentPrice - position.avgBuyPriceKrw) * position.quantity;
         const pnlNative = (currentPriceNative - position.avgBuyPriceNative) * position.quantity;
         const pnlPercent = Number((((currentPrice - position.avgBuyPriceKrw) / position.avgBuyPriceKrw) * 100).toFixed(2));
@@ -95,14 +98,18 @@ export const HoldingsPanel: React.FC<HoldingsPanelProps> = ({ positions, onSellP
 
               <div className="flex items-center gap-4">
                 <div className="text-right">
-                  <div className="text-lg font-black text-slate-900">
-                    {formatStockPrice(currentPriceNative, currentPrice, position.currency, mode)}
+                  <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">평가금액</div>
+                  <div className="text-xl font-black text-slate-900 leading-tight">
+                    {formatStockPrice(marketValueNative, marketValue, position.currency, mode)}
                   </div>
-                  <div className={`text-xs font-bold flex items-center gap-1 justify-end ${isProfit ? 'text-red-600' : 'text-blue-600'}`}>
+                  <div className={`text-xs font-bold flex items-center gap-1 justify-end mt-0.5 ${isProfit ? 'text-red-600' : 'text-blue-600'}`}>
                     {isProfit ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
                     {isProfit ? '+' : ''}
                     {formatStockPrice(pnlNative, pnl, position.currency, mode)} ({isProfit ? '+' : ''}
                     {pnlPercent}%)
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1">
+                    현재가 {formatStockPrice(currentPriceNative, currentPrice, position.currency, mode)}
                   </div>
                 </div>
 
