@@ -30,7 +30,9 @@ interface TradingDashboardProps {
   onOpenSmsPreview: () => void;
 }
 
-const POLL_INTERVAL_MS = 20000;
+// 5s (was 20s) — feels live like other stock apps; this just re-reads the
+// session blob (no external API calls), so it's cheap to poll often.
+const POLL_INTERVAL_MS = 5000;
 
 async function fetchSessionState(): Promise<{ active: boolean; session?: TradingSession }> {
   const res = await fetch('/api/session/state');

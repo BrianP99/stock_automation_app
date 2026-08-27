@@ -9,7 +9,9 @@ interface RealizedPnlPanelProps {
   tradeOrders: TradeOrder[];
 }
 
-const POLL_INTERVAL_MS = 20000;
+// 5s (was 20s) — feels live like other stock apps; safe because the server
+// caches each symbol's intraday price for 15s, so this doesn't add real load.
+const POLL_INTERVAL_MS = 5000;
 
 /** "실현손익" — closed (SELL) trades only, each with exactly how much was made/lost and on what. */
 export const RealizedPnlPanel: React.FC<RealizedPnlPanelProps> = ({ tradeOrders }) => {

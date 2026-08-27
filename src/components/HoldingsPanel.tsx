@@ -12,7 +12,9 @@ interface HoldingsPanelProps {
   isSelling: string | null; // symbol currently being sold, for a per-card loading state
 }
 
-const POLL_INTERVAL_MS = 20000;
+// 5s (was 20s) — feels live like other stock apps; safe because the server
+// caches each symbol's intraday price for 15s, so this doesn't add real load.
+const POLL_INTERVAL_MS = 5000;
 
 export const HoldingsPanel: React.FC<HoldingsPanelProps> = ({ positions, onSellPosition, isSelling }) => {
   const [analyses, setAnalyses] = useState<Record<string, StockAnalysisResponse | undefined>>({});
