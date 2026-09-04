@@ -120,10 +120,27 @@ export interface WatchlistCandidate {
   scannedAt: string;
 }
 
+/**
+ * Idle cash automatically parked in a short-term US Treasury ETF (SGOV) so it
+ * earns yield instead of sitting at 0% while waiting for the next stock
+ * signal. Deliberately NOT a `Position` — it's cash management, not an AI
+ * stock pick, so it's excluded from the holdings list, stop-loss/trailing-exit
+ * logic, maxConcurrentPositions, and win/loss trade tracking.
+ */
+export interface CashSweepHolding {
+  symbol: string;
+  name: string;
+  quantity: number;
+  avgBuyPriceNative: number;
+  avgBuyPriceKrw: number;
+  currentValueKrw: number;
+}
+
 export interface PortfolioState {
   initialCapital: number;
   cashBalance: number; // KRW, unified across markets
   positions: Position[];
+  cashSweep: CashSweepHolding | null;
   currentValuation: number;
   totalPnL: number;
   totalPnLPercent: number;

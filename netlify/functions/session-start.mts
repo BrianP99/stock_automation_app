@@ -32,6 +32,7 @@ export default async (req: Request) => {
       initialCapital: config.investmentAmount,
       cashBalance: config.investmentAmount,
       positions: [],
+      cashSweep: null,
       currentValuation: config.investmentAmount,
       totalPnL: 0,
       totalPnLPercent: 0,

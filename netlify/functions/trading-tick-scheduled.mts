@@ -1,6 +1,13 @@
 import type { Config } from '@netlify/functions';
 import { getStockAnalysis, getScreeningSignal } from '../../server/marketData';
-import { runPortfolioTick, resetDailyCountersIfNewDay, type HeldAnalysis, type CandidateAnalysis } from '../../server/tradingEngine';
+import {
+  runPortfolioTick,
+  resetDailyCountersIfNewDay,
+  CASH_SWEEP_SYMBOL,
+  type HeldAnalysis,
+  type CandidateAnalysis,
+  type CashSweepQuote,
+} from '../../server/tradingEngine';
 import { getCurrentSession, saveCurrentSession } from '../../server/sessionStore';
 import { TRADING_UNIVERSE } from '../../server/data/curatedUniverse';
 import { notifyDiscordTrades } from '../../server/discord';
@@ -92,11 +99,24 @@ export default async () => {
       })
     ).filter((x): x is CandidateAnalysis => x !== null);
 
+    // 3.5) Latest price for the idle-cash treasury sweep (SGOV) — fetched every
+    //      tick regardless of whether it's currently held, so the engine can
+    //      value/liquidate/buy into it.
+    const cashSweepQuote: CashSweepQuote | null = await getStockAnalysis(CASH_SWEEP_SYMBOL)
+      .then((a) => ({ priceNative: a.nativePrice, priceKrw: a.price }))
+      .catch(() => null);
+
     // 4) Run the deterministic multi-position decision.
-    const result = runPortfolioTick(resetPortfolio, heldAnalyses, candidateAnalyses, {
-      maxTradesPerDay: session.config.maxTradesPerDay,
-      maxConcurrentPositions: session.config.maxConcurrentPositions,
-    });
+    const result = runPortfolioTick(
+      resetPortfolio,
+      heldAnalyses,
+      candidateAnalyses,
+      {
+        maxTradesPerDay: session.config.maxTradesPerDay,
+        maxConcurrentPositions: session.config.maxConcurrentPositions,
+      },
+      cashSweepQuote
+    );
 
     session.portfolio = result.portfolio;
     session.watchlist = watchlist;

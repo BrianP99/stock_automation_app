@@ -87,6 +87,8 @@ export async function notifyDiscordSummary(
   titleOverride?: string
 ): Promise<DiscordNotifyResult> {
   const isProfit = portfolio.totalPnL >= 0;
+  const cashSweepValueKrw = portfolio.cashSweep?.currentValueKrw ?? 0;
+  const totalCashKrw = portfolio.cashBalance + cashSweepValueKrw;
 
   const positionLines = positions.length
     ? positions
@@ -110,7 +112,14 @@ export async function notifyDiscordSummary(
         value: `${isProfit ? '+' : ''}${Math.round(portfolio.totalPnL).toLocaleString('ko-KR')}원 (${isProfit ? '+' : ''}${portfolio.totalPnLPercent}%)`,
         inline: true,
       },
-      { name: '예수금', value: `${Math.round(portfolio.cashBalance).toLocaleString('ko-KR')}원`, inline: true },
+      {
+        name: '현금성 자산',
+        value:
+          cashSweepValueKrw > 0
+            ? `${Math.round(totalCashKrw).toLocaleString('ko-KR')}원 (단기국채 ${Math.round(cashSweepValueKrw).toLocaleString('ko-KR')}원 포함)`
+            : `${Math.round(totalCashKrw).toLocaleString('ko-KR')}원`,
+        inline: true,
+      },
       { name: `보유 종목 (${positions.length}개)`, value: positionLines },
     ],
     timestamp: new Date().toISOString(),
