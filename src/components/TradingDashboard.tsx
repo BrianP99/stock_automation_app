@@ -342,9 +342,14 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
         <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm">
           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">예수금 (대기 현금)</div>
           <div className="text-2xl sm:text-3xl font-black text-slate-900 mt-2">
-            {Math.round(portfolio.cashBalance).toLocaleString('ko-KR')}
+            {Math.round(portfolio.cashBalance + (portfolio.cashSweep?.currentValueKrw ?? 0)).toLocaleString('ko-KR')}
             <span className="text-base font-bold text-slate-500 ml-1">원</span>
           </div>
+          {portfolio.cashSweep && (
+            <div className="mt-3 text-xs text-slate-600 font-semibold">
+              이 중 <span className="font-bold text-slate-800">{Math.round(portfolio.cashSweep.currentValueKrw).toLocaleString('ko-KR')}원</span>은 단기국채(SGOV)에 파킹되어 배당을 받는 중
+            </div>
+          )}
           <div className="mt-3 text-xs text-slate-600 flex items-center justify-between font-semibold">
             <span>오늘 매매: {portfolio.todayTradesCount}회</span>
             <span>한도: {config.maxTradesPerDay}회</span>

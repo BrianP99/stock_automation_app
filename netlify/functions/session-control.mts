@@ -1,6 +1,6 @@
 import type { Config } from '@netlify/functions';
 import { getStockAnalysis } from '../../server/marketData';
-import { sellPositionNow } from '../../server/tradingEngine';
+import { sellPositionNow, liquidateCashSweep, CASH_SWEEP_SYMBOL } from '../../server/tradingEngine';
 import { getCurrentSession, saveCurrentSession } from '../../server/sessionStore';
 import { notifyDiscordTrade, notifyDiscordTrades, notifyDiscordSummary } from '../../server/discord';
 import type { TradingConfig } from '../../src/types';
@@ -99,6 +99,15 @@ export default async (req: Request) => {
         // Leave this one in place; it'll be retried on the next manual exit attempt.
       }
     }
+    // Exiting should return everything to cash, including whatever's parked
+    // in the treasury sweep — not leave a stray SGOV holding behind.
+    if (session.portfolio.cashSweep) {
+      const sweepQuote = await getStockAnalysis(CASH_SWEEP_SYMBOL)
+        .then((a) => ({ priceNative: a.nativePrice, priceKrw: a.price }))
+        .catch(() => null); // falls back to last-known price inside liquidateCashSweep
+      session.portfolio = liquidateCashSweep(session.portfolio, sweepQuote);
+    }
+
     if (exitOrders.length) {
       const notifyResults = await notifyDiscordTrades(exitOrders);
       const logEntries = notifyResults.map(({ order, result: notifyResult }) => ({

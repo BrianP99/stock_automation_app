@@ -27,6 +27,64 @@ const TRAILING_EXIT_ATR_MULTIPLIER = 2.5; // once profitable, exit this many ATR
 // share of cash so a very low-ATR stock can't swallow the whole portfolio.
 const RISK_PER_TRADE_PERCENT = 0.01; // risk 1% of the portfolio per position
 
+// Idle cash sweep: cash not currently needed for a stock position earns 0%
+// just sitting in cashBalance, so it's automatically parked in a short-term
+// US Treasury ETF (SGOV, ~0-3 month T-bills — near-zero price volatility, a
+// functional cash substitute that pays yield) instead. Whenever a new stock
+// BUY needs funding, the sweep is fully liquidated back to cash first; any
+// cash still idle at the end of the tick is swept back in. This never
+// touches todayTradesCount/winCount/lossCount/tradeOrders — it's cash
+// management, not a trading decision the win-rate/expectancy tracking
+// (see docs/paper-trading-log.md) should see.
+export const CASH_SWEEP_SYMBOL = 'SGOV';
+const CASH_SWEEP_NAME = '미국 단기국채 ETF (SGOV)';
+const MIN_CASH_SWEEP_KRW = 10000; // skip sweeps too small to matter
+
+export interface CashSweepQuote {
+  priceNative: number;
+  priceKrw: number;
+}
+
+/** Marks the existing sweep holding to the latest known SGOV price without buying/selling. */
+function markCashSweepToMarket(portfolio: PortfolioState, quote: CashSweepQuote | null): PortfolioState {
+  if (!portfolio.cashSweep || !quote) return portfolio;
+  return { ...portfolio, cashSweep: { ...portfolio.cashSweep, currentValueKrw: portfolio.cashSweep.quantity * quote.priceKrw } };
+}
+
+/** Fully liquidates the treasury sweep back to cash — used before sizing a new stock buy, and on session exit. */
+export function liquidateCashSweep(portfolio: PortfolioState, quote: CashSweepQuote | null): PortfolioState {
+  if (!portfolio.cashSweep) return portfolio;
+  const priceKrw = quote?.priceKrw ?? portfolio.cashSweep.avgBuyPriceKrw;
+  const proceeds = portfolio.cashSweep.quantity * priceKrw;
+  return { ...portfolio, cashBalance: portfolio.cashBalance + proceeds, cashSweep: null };
+}
+
+/** Parks whatever cash is left idle into the treasury sweep, averaging cost with any existing holding. */
+function sweepIdleCashIntoTreasury(portfolio: PortfolioState, quote: CashSweepQuote | null): PortfolioState {
+  if (!quote || portfolio.cashBalance < MIN_CASH_SWEEP_KRW) return portfolio;
+  const addQty = Math.floor(portfolio.cashBalance / quote.priceKrw);
+  if (addQty <= 0) return portfolio;
+  const cost = addQty * quote.priceKrw;
+  const existing = portfolio.cashSweep;
+  const totalQty = (existing?.quantity ?? 0) + addQty;
+  const avgBuyPriceKrw = existing ? (existing.avgBuyPriceKrw * existing.quantity + quote.priceKrw * addQty) / totalQty : quote.priceKrw;
+  const avgBuyPriceNative = existing
+    ? (existing.avgBuyPriceNative * existing.quantity + quote.priceNative * addQty) / totalQty
+    : quote.priceNative;
+  return {
+    ...portfolio,
+    cashBalance: portfolio.cashBalance - cost,
+    cashSweep: {
+      symbol: CASH_SWEEP_SYMBOL,
+      name: CASH_SWEEP_NAME,
+      quantity: totalQty,
+      avgBuyPriceNative,
+      avgBuyPriceKrw,
+      currentValueKrw: totalQty * quote.priceKrw,
+    },
+  };
+}
+
 export interface PortfolioRules {
   maxTradesPerDay: number;
   maxConcurrentPositions: number;
@@ -198,13 +256,17 @@ export function runPortfolioTick(
   portfolio: PortfolioState,
   heldAnalyses: HeldAnalysis[],
   candidateAnalyses: CandidateAnalysis[],
-  rules: PortfolioRules
+  rules: PortfolioRules,
+  cashSweepQuote: CashSweepQuote | null = null
 ): PortfolioTickResult {
   let working = portfolio;
   const orders: TradeOrder[] = [];
   let justHitTargetProfit = false;
 
-  // 0) Track each position's running peak price — the trailing-exit reference —
+  // 0) Mark any existing treasury-sweep holding to the latest known price.
+  working = markCashSweepToMarket(working, cashSweepQuote);
+
+  // 0.5) Track each position's running peak price — the trailing-exit reference —
   //    before evaluating any exits this tick.
   const priceBySymbol = new Map(heldAnalyses.map((h) => [h.position.symbol, h.analysis.price]));
   working = {
@@ -276,13 +338,21 @@ export function runPortfolioTick(
     .filter((c) => !heldSymbols.has(c.symbol) && c.analysis.signal.action === 'BUY')
     .sort((a, b) => b.analysis.signal.confidence - a.analysis.signal.confidence);
 
+  // Reclaim any cash currently parked in the treasury sweep before sizing new
+  // stock buys — the full liquid balance should be available, not just
+  // whatever happened to be sitting outside SGOV.
+  if (buyCandidates.length > 0) {
+    working = liquidateCashSweep(working, cashSweepQuote);
+  }
+
   // Portfolio value used as the risk base for sizing every buy this tick —
   // computed once up front rather than re-derived after each fill, which is
   // an accepted approximation (equity moves only slightly across a handful
   // of same-tick buys) in exchange for much simpler code.
   const portfolioValueForSizing =
     working.cashBalance +
-    working.positions.reduce((sum, p) => sum + p.quantity * (priceBySymbol.get(p.symbol) ?? p.avgBuyPriceKrw), 0);
+    working.positions.reduce((sum, p) => sum + p.quantity * (priceBySymbol.get(p.symbol) ?? p.avgBuyPriceKrw), 0) +
+    (working.cashSweep?.currentValueKrw ?? 0);
 
   for (const candidate of buyCandidates) {
     const openSlots = rules.maxConcurrentPositions - working.positions.length;
@@ -326,6 +396,10 @@ export function runPortfolioTick(
     }
   }
 
+  // 2.5) Park whatever cash is left idle after this tick's stock trades into
+  //      the treasury sweep rather than let it sit earning nothing.
+  working = sweepIdleCashIntoTreasury(working, cashSweepQuote);
+
   // 3) Recompute aggregate valuation from cash + all positions' latest KRW price.
   //    (Uses each held position's analysis price where available; positions
   //    without a fresh analysis this tick keep their last-known valuation via avgBuyPriceKrw.)
@@ -333,7 +407,7 @@ export function runPortfolioTick(
     (sum, p) => sum + p.quantity * (priceBySymbol.get(p.symbol) ?? p.avgBuyPriceKrw),
     0
   );
-  const currentValuation = working.cashBalance + holdingsValuation;
+  const currentValuation = working.cashBalance + holdingsValuation + (working.cashSweep?.currentValueKrw ?? 0);
   const totalPnL = currentValuation - working.initialCapital;
   const totalPnLPercent = Number(((totalPnL / working.initialCapital) * 100).toFixed(2));
 
