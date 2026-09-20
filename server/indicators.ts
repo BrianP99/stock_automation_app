@@ -136,8 +136,13 @@ export function generateSignal(input: SignalInput): TradingSignal {
   const rsiLabel = rsi14 != null ? ` (RSI ${rsi14.toFixed(1)})` : '';
   const gapPercent =
     sma5 != null && sma20 != null && sma20 !== 0 ? Math.abs((sma5 - sma20) / sma20) * 100 : 0;
-  // Only a hard gate once there's enough history to compute it — don't punish freshly-listed symbols.
-  const belowLongTermTrend = sma200 != null && price < sma200;
+  // Fail CLOSED: a buy requires the long-term uptrend to be positively
+  // confirmed, so an uncomputable SMA200 (short or partial history) blocks the
+  // trade rather than silently skipping the filter. The old fail-open version
+  // is what let the scanner buy a stock sitting 24% BELOW its 200-day line
+  // after a bad data fetch — the single largest loss of the paper test.
+  const trendUnconfirmed = sma200 == null;
+  const belowLongTermTrend = trendUnconfirmed || price < sma200;
   const volumeConfirmed = volumeRatio != null && volumeRatio >= 1.2;
   const volumeBoost = volumeConfirmed ? 5 : 0;
 
@@ -146,7 +151,9 @@ export function generateSignal(input: SignalInput): TradingSignal {
       return {
         action: 'HOLD',
         confidence: 52,
-        reason: `골든크로스가 발생했지만 200일선 아래 하락 추세라 가짜 신호(휩소) 가능성이 높아 매수를 보류합니다${rsiLabel}.`,
+        reason: trendUnconfirmed
+          ? `골든크로스가 발생했지만 200일선을 계산할 만큼 시세 데이터가 충분하지 않아 장기 추세를 확인할 수 없어 매수를 보류합니다${rsiLabel}.`
+          : `골든크로스가 발생했지만 200일선 아래 하락 추세라 가짜 신호(휩소) 가능성이 높아 매수를 보류합니다${rsiLabel}.`,
         cross,
       };
     }
