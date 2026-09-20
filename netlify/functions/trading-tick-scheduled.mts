@@ -4,16 +4,17 @@ import {
   runPortfolioTick,
   runTrendTick,
   resetDailyCountersIfNewDay,
+  checkDailyLossLimit,
   CASH_SWEEP_SYMBOL,
   type HeldAnalysis,
   type CandidateAnalysis,
   type CashSweepQuote,
   type TrendTickInput,
 } from '../../server/tradingEngine';
-import { getCurrentSession, saveCurrentSession } from '../../server/sessionStore';
+import { getCurrentSession, saveCurrentSession, type StoredSession } from '../../server/sessionStore';
 import { TRADING_UNIVERSE } from '../../server/data/curatedUniverse';
 import { TREND_UNIVERSE } from '../../server/data/trendUniverse';
-import { notifyDiscordTrades } from '../../server/discord';
+import { notifyDiscordTrades, notifyDiscordSummary } from '../../server/discord';
 import type { PortfolioState, StrategyMode, WatchlistCandidate } from '../../src/types';
 
 // Runs every 5 minutes regardless of whether anyone has the dashboard open.
@@ -35,6 +36,44 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
+}
+
+/**
+ * Records the day's opening valuation and trips the circuit breaker when the
+ * portfolio has fallen past the configured daily loss limit. Pausing (rather
+ * than liquidating) is deliberate: a human decides what to do next.
+ */
+async function applyDailyLossLimit(session: StoredSession, isNewDay: boolean): Promise<void> {
+  if (isNewDay || session.dayStartValuation == null) {
+    session.dayStartValuation = session.portfolio.currentValuation;
+    return;
+  }
+  if (session.isPaused) return;
+
+  const check = checkDailyLossLimit(
+    session.portfolio.currentValuation,
+    session.dayStartValuation,
+    session.config.maxDailyLossPercent
+  );
+  if (!check.breached) return;
+
+  session.isPaused = true;
+  session.latestAiMessage =
+    `일일 손실 한도 ${check.limitPercent}%를 넘어서(오늘 ${check.lossPercent}%) 자동매매를 멈췄습니다. ` +
+    '내용을 확인한 뒤 직접 재개해주세요.';
+  const notifyResult = await notifyDiscordSummary(session.portfolio, [], '🛑 일일 손실 한도 도달 — 자동매매 정지');
+  session.notificationLog = [
+    {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      kind: 'summary' as const,
+      title: '일일 손실 한도 도달 — 자동매매 정지',
+      detail: `오늘 ${check.lossPercent}% 하락 (한도 ${check.limitPercent}%)`,
+      ok: notifyResult.ok,
+      ...(notifyResult.ok ? {} : { error: notifyResult.error || `HTTP ${notifyResult.status}` }),
+    },
+    ...(session.notificationLog || []),
+  ];
 }
 
 /** Runs the index-trend strategy: no screening, just the trend universe's own trend lines. */
@@ -102,6 +141,7 @@ export default async () => {
     if (mode === 'index-trend') {
       const now = new Date().toISOString();
       const { portfolio: resetPortfolio, date } = resetDailyCountersIfNewDay(session.portfolio, session.lastTradeDate);
+      const isNewDay = date !== session.lastTradeDate;
       const cashSweepQuote: CashSweepQuote | null = await getStockAnalysis(CASH_SWEEP_SYMBOL)
         .then((a) => ({ priceNative: a.nativePrice, priceKrw: a.price }))
         .catch(() => null);
@@ -136,6 +176,7 @@ export default async () => {
           : '지수가 200일 추세선 아래에 있어 현금(단기국채)으로 대기 중입니다.';
       }
 
+      await applyDailyLossLimit(session, isNewDay);
       await saveCurrentSession(session);
       return;
     }
@@ -170,6 +211,7 @@ export default async () => {
 
     // 2) Reset daily counters if the Asia/Seoul day has rolled over.
     const { portfolio: resetPortfolio, date } = resetDailyCountersIfNewDay(session.portfolio, session.lastTradeDate);
+    const isNewDay = date !== session.lastTradeDate;
 
     // 3) Full (intraday+FX) analysis for held positions + top unheld candidates.
     const heldSymbols = new Set(resetPortfolio.positions.map((p) => p.symbol));
@@ -243,6 +285,7 @@ export default async () => {
       session.latestAiMessage = `${session.portfolio.positions.length}개 종목 보유 중, 실시간 신호를 감시하고 있습니다.`;
     }
 
+    await applyDailyLossLimit(session, isNewDay);
     await saveCurrentSession(session);
   } catch (err) {
     // A blocked/failed market-data fetch shouldn't crash the schedule — just

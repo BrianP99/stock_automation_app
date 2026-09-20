@@ -22,6 +22,13 @@ export interface TradingConfig {
   maxConcurrentPositions: number; // 3-5
   /** Optional so sessions started before the trend strategy existed keep running as 'ai-picks'. */
   strategyMode?: StrategyMode;
+  /**
+   * Circuit breaker: if the portfolio falls this far below the value it opened
+   * the day at, trading pauses itself until a human resumes it. Matters far
+   * more once real money is connected — a bug or a flash crash can otherwise
+   * keep transacting all day. Optional; defaults to DEFAULT_MAX_DAILY_LOSS_PERCENT.
+   */
+  maxDailyLossPercent?: number;
 }
 
 /** One currently-held stock in the AI's portfolio. */
@@ -179,4 +186,6 @@ export interface TradingSession {
   createdAt: string;
   lastTickAt: string | null;
   lastError: string | null;
+  /** Portfolio value at the start of the current Asia/Seoul day — the daily-loss circuit breaker's reference point. */
+  dayStartValuation?: number;
 }

@@ -524,6 +524,27 @@ export function runTrendTick(
   };
 }
 
+/** Default circuit-breaker threshold when the session config doesn't set one. */
+export const DEFAULT_MAX_DAILY_LOSS_PERCENT = 5;
+
+/**
+ * Daily-loss circuit breaker. Compares the live valuation against what the
+ * portfolio was worth when the Asia/Seoul day opened; a breach should pause
+ * trading rather than let the system keep transacting through a bad day.
+ */
+export function checkDailyLossLimit(
+  currentValuation: number,
+  dayStartValuation: number | undefined,
+  maxDailyLossPercent: number | undefined
+): { breached: boolean; lossPercent: number; limitPercent: number } {
+  const limitPercent = maxDailyLossPercent ?? DEFAULT_MAX_DAILY_LOSS_PERCENT;
+  if (!dayStartValuation || dayStartValuation <= 0 || limitPercent <= 0) {
+    return { breached: false, lossPercent: 0, limitPercent };
+  }
+  const lossPercent = Number((((currentValuation - dayStartValuation) / dayStartValuation) * 100).toFixed(2));
+  return { breached: lossPercent <= -limitPercent, lossPercent, limitPercent };
+}
+
 /** Asia/Seoul calendar date (YYYY-MM-DD), used to reset the daily trade counter. */
 export function seoulDateString(date: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
