@@ -418,6 +418,112 @@ export function runPortfolioTick(
   };
 }
 
+// --- index-trend strategy ------------------------------------------------------
+// A completely separate decision path from runPortfolioTick's stock picking.
+// There is no selection, no ATR stop, no trailing exit and no confidence score:
+// the index is either above its 200-day trend line (hold it) or below it (sit in
+// the treasury sweep). Rules this simple are the point — the tested edge is
+// drawdown reduction, and every extra rule we backtested made things worse.
+
+export interface TrendTickInput {
+  symbol: string;
+  name: string;
+  market: Market;
+  exchange: string;
+  sector: string;
+  description: string;
+  currency: 'KRW' | 'USD';
+  priceKrw: number;
+  priceNative: number;
+  atrKrw: number | null;
+  /** The decision line. Null means "can't confirm the trend" and is treated as do-not-buy. */
+  sma200Krw: number | null;
+}
+
+/**
+ * Advances the portfolio by one index-trend tick.
+ * Sells any held index that has closed below its trend line, then buys the ones
+ * above it, splitting available cash evenly across the universe. Idle cash is
+ * swept into the treasury ETF exactly as in the stock-picking path.
+ */
+export function runTrendTick(
+  portfolio: PortfolioState,
+  inputs: TrendTickInput[],
+  cashSweepQuote: CashSweepQuote | null = null
+): PortfolioTickResult {
+  let working = markCashSweepToMarket(portfolio, cashSweepQuote);
+  const orders: TradeOrder[] = [];
+  const priceBySymbol = new Map(inputs.map((i) => [i.symbol, i.priceKrw]));
+
+  // 1) Exit anything that has dropped below its trend line.
+  for (const input of inputs) {
+    const position = working.positions.find((p) => p.symbol === input.symbol);
+    if (!position || input.sma200Krw == null) continue;
+    if (input.priceKrw < input.sma200Krw) {
+      const result = closePosition(
+        working,
+        position,
+        input.priceKrw,
+        input.priceNative,
+        `추세 이탈: ${input.name}이(가) 200일 추세선 아래로 내려가 전량 매도하고 현금(단기국채)으로 대피했습니다.`,
+        90
+      );
+      working = result.portfolio;
+      orders.push(result.order);
+    }
+  }
+
+  // 2) Enter anything above its trend line that we don't already hold.
+  const buyable = inputs.filter(
+    (i) => i.sma200Krw != null && i.priceKrw > i.sma200Krw && !working.positions.some((p) => p.symbol === i.symbol)
+  );
+  if (buyable.length > 0) {
+    working = liquidateCashSweep(working, cashSweepQuote);
+    let slotsLeft = buyable.length;
+    for (const input of buyable) {
+      const cashToSpend = working.cashBalance / slotsLeft;
+      slotsLeft -= 1;
+      const result = openPosition(
+        working,
+        input.symbol,
+        input.name,
+        input.market,
+        input.exchange,
+        input.sector,
+        input.description,
+        input.currency,
+        input.priceNative,
+        input.priceKrw,
+        input.atrKrw,
+        cashToSpend,
+        `추세 진입: ${input.name}이(가) 200일 추세선 위에 있어 매수했습니다.`,
+        90
+      );
+      if (result) {
+        working = result.portfolio;
+        orders.push(result.order);
+      }
+    }
+  }
+
+  // 3) Park whatever is idle — in this strategy that is the entire "risk off" state.
+  working = sweepIdleCashIntoTreasury(working, cashSweepQuote);
+
+  const holdingsValuation = working.positions.reduce(
+    (sum, p) => sum + p.quantity * (priceBySymbol.get(p.symbol) ?? p.avgBuyPriceKrw),
+    0
+  );
+  const currentValuation = working.cashBalance + holdingsValuation + (working.cashSweep?.currentValueKrw ?? 0);
+  const totalPnL = currentValuation - working.initialCapital;
+  const totalPnLPercent = Number(((totalPnL / working.initialCapital) * 100).toFixed(2));
+
+  return {
+    portfolio: { ...working, currentValuation, totalPnL, totalPnLPercent },
+    orders,
+    justHitTargetProfit: false,
+  };
+}
+
 /** Asia/Seoul calendar date (YYYY-MM-DD), used to reset the daily trade counter. */
 export function seoulDateString(date: Date = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);

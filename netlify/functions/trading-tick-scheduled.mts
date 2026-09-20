@@ -2,16 +2,19 @@ import type { Config } from '@netlify/functions';
 import { getStockAnalysis, getScreeningSignal } from '../../server/marketData';
 import {
   runPortfolioTick,
+  runTrendTick,
   resetDailyCountersIfNewDay,
   CASH_SWEEP_SYMBOL,
   type HeldAnalysis,
   type CandidateAnalysis,
   type CashSweepQuote,
+  type TrendTickInput,
 } from '../../server/tradingEngine';
 import { getCurrentSession, saveCurrentSession } from '../../server/sessionStore';
 import { TRADING_UNIVERSE } from '../../server/data/curatedUniverse';
+import { TREND_UNIVERSE } from '../../server/data/trendUniverse';
 import { notifyDiscordTrades } from '../../server/discord';
-import type { WatchlistCandidate } from '../../src/types';
+import type { PortfolioState, StrategyMode, WatchlistCandidate } from '../../src/types';
 
 // Runs every 5 minutes regardless of whether anyone has the dashboard open.
 // One function does both the market scan AND the trade decision — folding
@@ -34,13 +37,109 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   return results;
 }
 
+/** Runs the index-trend strategy: no screening, just the trend universe's own trend lines. */
+async function runIndexTrendTick(resetPortfolio: PortfolioState, cashSweepQuote: CashSweepQuote | null, now: string) {
+  const inputs = (
+    await mapWithConcurrency(TREND_UNIVERSE, 4, async (u) => {
+      try {
+        const a = await getStockAnalysis(u.symbol);
+        return {
+          symbol: u.symbol,
+          name: u.name,
+          market: u.market,
+          exchange: a.exchange,
+          sector: u.sector,
+          description: u.description,
+          currency: a.currency,
+          priceKrw: a.price,
+          priceNative: a.nativePrice,
+          atrKrw: a.atrKrw,
+          sma200Krw: a.sma200Krw,
+        } as TrendTickInput;
+      } catch {
+        return null;
+      }
+    })
+  ).filter((x): x is TrendTickInput => x !== null);
+
+  if (inputs.length === 0) {
+    throw new Error('지수 시세를 불러오지 못했습니다.');
+  }
+
+  const watchlist: WatchlistCandidate[] = inputs.map((i) => {
+    const above = i.sma200Krw != null && i.priceKrw > i.sma200Krw;
+    const gap = i.sma200Krw ? ((i.priceKrw - i.sma200Krw) / i.sma200Krw) * 100 : 0;
+    return {
+      symbol: i.symbol,
+      name: i.name,
+      market: i.market,
+      exchange: i.exchange,
+      currency: i.currency,
+      sector: i.sector,
+      description: i.description,
+      action: i.sma200Krw == null ? 'HOLD' : above ? 'BUY' : 'SELL',
+      confidence: 90,
+      reason:
+        i.sma200Krw == null
+          ? '200일 추세선을 계산할 데이터가 아직 부족합니다.'
+          : `200일 추세선 ${above ? '위' : '아래'} (${gap >= 0 ? '+' : ''}${gap.toFixed(1)}%)`,
+      scannedAt: now,
+    };
+  });
+
+  return { result: runTrendTick(resetPortfolio, inputs, cashSweepQuote), watchlist };
+}
+
 export default async () => {
   const session = await getCurrentSession();
   if (!session || !session.isActive || session.isPaused) {
     return; // nothing to do this tick
   }
 
+  const mode: StrategyMode = session.config.strategyMode ?? 'ai-picks';
+
   try {
+    if (mode === 'index-trend') {
+      const now = new Date().toISOString();
+      const { portfolio: resetPortfolio, date } = resetDailyCountersIfNewDay(session.portfolio, session.lastTradeDate);
+      const cashSweepQuote: CashSweepQuote | null = await getStockAnalysis(CASH_SWEEP_SYMBOL)
+        .then((a) => ({ priceNative: a.nativePrice, priceKrw: a.price }))
+        .catch(() => null);
+
+      const { result, watchlist } = await runIndexTrendTick(resetPortfolio, cashSweepQuote, now);
+      session.portfolio = result.portfolio;
+      session.watchlist = watchlist;
+      session.lastTradeDate = date;
+      session.lastTickAt = now;
+      session.lastError = null;
+
+      if (result.orders.length) {
+        session.tradeOrders = [...result.orders.reverse(), ...session.tradeOrders];
+        session.latestAiMessage = result.orders[result.orders.length - 1].reason;
+        const notifyResults = await notifyDiscordTrades(result.orders);
+        session.notificationLog = [
+          ...notifyResults.map(({ order, result: r }) => ({
+            id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            timestamp: new Date().toISOString(),
+            kind: 'trade' as const,
+            title: `${order.type === 'BUY' ? '매수' : '매도'} 체결 — ${order.stockName}`,
+            detail: `${order.quantity}주 @ ${Math.round(order.price).toLocaleString('ko-KR')}원`,
+            ok: r.ok,
+            ...(r.ok ? {} : { error: r.error || `HTTP ${r.status}` }),
+          })),
+          ...(session.notificationLog || []),
+        ];
+      } else {
+        const holding = session.portfolio.positions.length > 0;
+        session.latestAiMessage = holding
+          ? '지수가 200일 추세선 위에 있어 그대로 보유 중입니다.'
+          : '지수가 200일 추세선 아래에 있어 현금(단기국채)으로 대기 중입니다.';
+      }
+
+      await saveCurrentSession(session);
+      return;
+    }
+
     // 1) Cheap screen of the whole curated universe (daily bars only).
     const screenResults = await mapWithConcurrency(TRADING_UNIVERSE, 10, async (u) => {
       try {
