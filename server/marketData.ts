@@ -5,10 +5,18 @@ import { sma, rsi, atr, detectCross, generateSignal, TradingSignal } from './ind
 const YAHOO_HOSTS = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'];
 const FETCH_TIMEOUT_MS = 8000;
 
-/** Korean 6-digit KRX codes (e.g. 005930) map to Yahoo's "<code>.KS" symbol. Anything else (US tickers) is used as-is. */
+// Yahoo lists KOSPI names as "<code>.KS" and KOSDAQ names as "<code>.KQ", but
+// its coverage is inconsistent per symbol — some KOSDAQ codes resolve under
+// .KS, others 404 there and only work under .KQ. Measured 2026-09-20: 14 of
+// the 89 KRX symbols in the trading universe returned 404 for .KS, so the
+// scanner could never see them at all. Probe .KS first, fall back to .KQ, and
+// remember whichever suffix answered.
+const krxSuffixBySymbol = new Map<string, string>();
+
+/** Korean 6-digit KRX codes (e.g. 005930) map to Yahoo's "<code>.KS"/".KQ" symbol. Anything else (US tickers) is used as-is. */
 export function toYahooSymbol(symbol: string): string {
   const trimmed = symbol.trim().toUpperCase();
-  if (/^\d{6}$/.test(trimmed)) return `${trimmed}.KS`;
+  if (/^\d{6}$/.test(trimmed)) return `${trimmed}${krxSuffixBySymbol.get(trimmed) ?? '.KS'}`;
   return trimmed;
 }
 
@@ -96,6 +104,37 @@ function parseChart(raw: any): ParsedChart {
   };
 }
 
+/**
+ * Fetches a chart by app-level symbol, resolving the KRX suffix (.KS/.KQ) on
+ * the way. Non-KRX symbols pass straight through. The winning suffix is cached
+ * so a KOSDAQ name costs the extra probe only once per process.
+ */
+async function fetchChartBySymbol(
+  symbol: string,
+  range: string,
+  interval: string
+): Promise<{ raw: any; yahooSymbol: string }> {
+  const trimmed = symbol.trim().toUpperCase();
+  if (!/^\d{6}$/.test(trimmed)) {
+    return { raw: await fetchChartRaw(trimmed, range, interval), yahooSymbol: trimmed };
+  }
+
+  const known = krxSuffixBySymbol.get(trimmed);
+  const candidates = known ? [known] : ['.KS', '.KQ'];
+  let lastError: unknown;
+  for (const suffix of candidates) {
+    const yahooSymbol = `${trimmed}${suffix}`;
+    try {
+      const raw = await fetchChartRaw(yahooSymbol, range, interval);
+      krxSuffixBySymbol.set(trimmed, suffix);
+      return { raw, yahooSymbol };
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Failed to fetch chart data');
+}
+
 // --- tiny in-memory TTL cache (single-process; fine for this app's scale) --------------------
 
 const cache = new Map<string, { data: unknown; expires: number }>();
@@ -120,25 +159,25 @@ const FX_TTL_MS = 10 * 60 * 1000;
 const DEFAULT_USD_KRW_RATE = 1400;
 
 async function getDailyHistory(symbol: string): Promise<ParsedChart> {
-  const yahooSymbol = toYahooSymbol(symbol);
-  const key = `daily:${yahooSymbol}`;
+  const key = `daily:${symbol.trim().toUpperCase()}`;
   const cached = cacheGet<ParsedChart>(key);
   if (cached) return cached;
-  // '1y' (not '6mo') so there's enough history for a 200-day trend filter —
-  // ~252 trading days in a year comfortably covers SMA200 with margin.
-  const raw = await fetchChartRaw(yahooSymbol, '1y', '1d');
+  // '2y' (not '1y') so SMA200 is computable with real margin. A year leaves
+  // only ~45 spare bars, and generateSignal() now BLOCKS a buy when SMA200
+  // can't be computed — too thin a history would quietly freeze the scanner
+  // out of a symbol instead of just skipping one filter.
+  const { raw } = await fetchChartBySymbol(symbol, '2y', '1d');
   const parsed = parseChart(raw);
   cacheSet(key, parsed, DAILY_HISTORY_TTL_MS);
   return parsed;
 }
 
 async function getLatestIntraday(symbol: string): Promise<{ price: number; time: number } | null> {
-  const yahooSymbol = toYahooSymbol(symbol);
-  const key = `intraday:${yahooSymbol}`;
+  const key = `intraday:${symbol.trim().toUpperCase()}`;
   const cached = cacheGet<{ price: number; time: number } | null>(key);
   if (cached !== undefined) return cached;
   try {
-    const raw = await fetchChartRaw(yahooSymbol, '1d', '1m');
+    const { raw } = await fetchChartBySymbol(symbol, '1d', '1m');
     const parsed = parseChart(raw);
     const result = parsed.close.length
       ? { price: parsed.close[parsed.close.length - 1], time: parsed.timestamp[parsed.timestamp.length - 1] }
@@ -333,13 +372,12 @@ export interface PriceHistoryResult {
  * only what the user sees when they open a stock's chart.
  */
 export async function getPriceHistory(symbol: string, period: ChartPeriod): Promise<PriceHistoryResult> {
-  const yahooSymbol = toYahooSymbol(symbol);
   const { range, interval } = CHART_PERIOD_PARAMS[period];
-  const cacheKey = `history:${yahooSymbol}:${period}`;
+  const cacheKey = `history:${symbol.trim().toUpperCase()}:${period}`;
   const cached = cacheGet<PriceHistoryResult>(cacheKey);
   if (cached) return cached;
 
-  const raw = await fetchChartRaw(yahooSymbol, range, interval);
+  const { raw } = await fetchChartBySymbol(symbol, range, interval);
   const parsed = parseChart(raw);
   if (parsed.close.length < 2) {
     throw new Error('종목의 시세 데이터를 충분히 가져오지 못했습니다.');
