@@ -7,11 +7,21 @@ export type Market = 'KRX' | 'US';
  * target%/stop% anymore, since a flat percentage was either too tight for
  * volatile growth names or too loose for calm ones.
  */
+/**
+ * Which strategy the scheduled tick runs.
+ *  - 'ai-picks'    : scan ~225 stocks, buy golden-cross signals, ATR stops/trailing.
+ *  - 'index-trend' : hold a broad index ETF while it is above its 200-day trend
+ *                    line, otherwise sit in the treasury sweep. No stock picking.
+ */
+export type StrategyMode = 'ai-picks' | 'index-trend';
+
 export interface TradingConfig {
   investmentAmount: number; // KRW
   autoTradingEnabled: boolean;
   maxTradesPerDay: number;
   maxConcurrentPositions: number; // 3-5
+  /** Optional so sessions started before the trend strategy existed keep running as 'ai-picks'. */
+  strategyMode?: StrategyMode;
 }
 
 /** One currently-held stock in the AI's portfolio. */
@@ -103,6 +113,8 @@ export interface StockAnalysisResponse {
   history: ChartPoint[];
   signal: TradingSignal;
   atrKrw: number | null;
+  /** 200-day SMA in KRW — the index-trend strategy's decision line. Null until 200 bars exist. */
+  sma200Krw: number | null;
 }
 
 /** A symbol the scanner currently likes, shown in the watchlist panel for transparency. */

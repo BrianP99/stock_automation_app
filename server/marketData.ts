@@ -240,6 +240,8 @@ export interface StockAnalysis {
   signal: TradingSignal;
   /** ATR(14), KRW — how much this specific stock actually moves day to day; used to size stop-loss/trailing-exit distance per stock instead of one flat % for everyone. Null until 15+ bars of history exist. */
   atrKrw: number | null;
+  /** 200-day SMA, KRW — the long-term trend line. Gates every BUY in 'ai-picks' and is the whole decision in 'index-trend'. Null until 200 bars exist. */
+  sma200Krw: number | null;
 }
 
 const HISTORY_POINTS_RETURNED = 90;
@@ -344,6 +346,7 @@ export async function getStockAnalysis(symbol: string): Promise<StockAnalysis> {
     history: fullHistory.slice(-HISTORY_POINTS_RETURNED),
     signal,
     atrKrw: nativeAtr14 != null ? Math.round(nativeAtr14 * fxRate) : null,
+    sma200Krw: sma200Series[n - 1] != null ? Math.round((sma200Series[n - 1] as number) * fxRate) : null,
   };
 }
 
