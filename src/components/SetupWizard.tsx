@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TradingConfig } from '../types';
+import { TradingConfig, StrategyMode } from '../types';
 import { PRESET_AMOUNTS } from '../data/popularStocks';
 import { ShieldCheck, Sparkles, Play, ArrowRight, Bot, TrendingUp, Ruler, Anchor, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -71,8 +71,11 @@ const METHODOLOGY_PAGES: MethodologyPage[] = [
 export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSizeClass }) => {
   const [investmentAmount, setInvestmentAmount] = useState<number>(1000000);
   const [maxConcurrentPositions, setMaxConcurrentPositions] = useState<number>(4);
+  const [strategyMode, setStrategyMode] = useState<StrategyMode>('index-trend');
   const [isStarting, setIsStarting] = useState<boolean>(false);
   const [methodologyPage, setMethodologyPage] = useState<number>(0);
+
+  const isIndexTrend = strategyMode === 'index-trend';
 
   const handleStart = async () => {
     const config: TradingConfig = {
@@ -80,6 +83,7 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
       autoTradingEnabled: true,
       maxTradesPerDay: 10,
       maxConcurrentPositions,
+      strategyMode,
     };
 
     setIsStarting(true);
@@ -123,6 +127,58 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
           leave empty on wide desktop screens. */}
       <div className="lg:grid lg:grid-cols-[1fr_320px] lg:gap-6 lg:items-start">
       <div className="space-y-5">
+        {/* Strategy choice comes first — it decides what every setting below means. */}
+        <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm">
+          <div className="flex items-center space-x-2.5 mb-4">
+            <span className="w-8 h-8 rounded-xl bg-slate-900 text-white font-black flex items-center justify-center shadow-md">
+              ★
+            </span>
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">매매 방식</h3>
+              <p className="text-xs text-slate-500">먼저 어떤 방식으로 굴릴지 고르세요</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <button
+              onClick={() => setStrategyMode('index-trend')}
+              className={`text-left p-4 rounded-2xl border-2 transition-all ${
+                isIndexTrend
+                  ? 'bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-600/10'
+                  : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="font-extrabold text-slate-900">지수 추세추종</span>
+                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-600 text-white">추천</span>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                종목을 고르지 않고 미국 S&amp;P 500 지수만 담아요. 지수가 하락 추세로 꺾이면 전량 팔고 단기국채로 피해요.
+              </p>
+              <p className="text-[11px] text-emerald-700 font-bold mt-2">
+                28년 검증: 최악의 하락을 −55% → −25%로 방어
+              </p>
+            </button>
+            <button
+              onClick={() => setStrategyMode('ai-picks')}
+              className={`text-left p-4 rounded-2xl border-2 transition-all ${
+                !isIndexTrend
+                  ? 'bg-emerald-50 border-emerald-500 shadow-md shadow-emerald-600/10'
+                  : 'bg-slate-50 border-slate-200 hover:border-slate-300'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="font-extrabold text-slate-900">AI 종목선정</span>
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                국내외 우량주 약 200개를 5분마다 확인해서, 상승 신호가 나온 종목을 직접 사고팝니다.
+              </p>
+              <p className="text-[11px] text-slate-500 font-bold mt-2">
+                3년 검증: 지수보다 77~102%p 낮은 성과
+              </p>
+            </button>
+          </div>
+        </div>
+
         {/* STEP 1 + 2, side by side on desktop so this fits in one screen. */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* STEP 1: Investment Amount */}
@@ -167,36 +223,61 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
             </div>
           </div>
 
-          {/* STEP 2: Max Concurrent Positions */}
-          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm">
-            <div className="flex items-center space-x-2.5 mb-4">
-              <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white font-black flex items-center justify-center shadow-md shadow-emerald-600/20">
-                2
-              </span>
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">동시 보유 종목 수</h3>
-                <p className="text-xs text-slate-500">투자금을 몇 종목에 나눠 담을지</p>
+          {/* STEP 2 depends on the strategy: picking stocks needs a slot count,
+              holding one index does not. */}
+          {isIndexTrend ? (
+            <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm">
+              <div className="flex items-center space-x-2.5 mb-4">
+                <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white font-black flex items-center justify-center shadow-md shadow-emerald-600/20">
+                  2
+                </span>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">무엇을 담나요</h3>
+                  <p className="text-xs text-slate-500">종목을 고르지 않습니다</p>
+                </div>
               </div>
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
+                <div className="font-extrabold text-slate-900">S&amp;P 500 지수 ETF</div>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  미국 대표 500개 기업을 통째로 담습니다. 이 지수가 200일 추세선 위에 있으면 보유하고, 아래로 내려가면 전량
+                  팔아서 단기국채로 대피합니다.
+                </p>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">
+                매매는 1년에 서너 번 정도만 일어나요. 자주 사고파는 것보다 큰 하락을 피하는 데 집중하는 방식이에요.
+              </p>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              {[3, 4, 5].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setMaxConcurrentPositions(n)}
-                  className={`py-3.5 rounded-xl font-black text-base border-2 transition-all ${
-                    maxConcurrentPositions === n
-                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-md'
-                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                  }`}
-                >
-                  {n}개
-                </button>
-              ))}
+          ) : (
+            <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-sm">
+              <div className="flex items-center space-x-2.5 mb-4">
+                <span className="w-8 h-8 rounded-xl bg-emerald-600 text-white font-black flex items-center justify-center shadow-md shadow-emerald-600/20">
+                  2
+                </span>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">동시 보유 종목 수</h3>
+                  <p className="text-xs text-slate-500">투자금을 몇 종목에 나눠 담을지</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setMaxConcurrentPositions(n)}
+                    className={`py-3.5 rounded-xl font-black text-base border-2 transition-all ${
+                      maxConcurrentPositions === n
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-md'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    {n}개
+                  </button>
+                ))}
+              </div>
+              <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">
+                종목 수가 많을수록 한 종목당 들어가는 돈은 줄어서, 한 종목이 흔들려도 전체 충격은 작아져요.
+              </p>
             </div>
-            <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">
-              종목 수가 많을수록 한 종목당 들어가는 돈은 줄어서, 한 종목이 흔들려도 전체 충격은 작아져요.
-            </p>
-          </div>
+          )}
         </div>
 
         {/* Beginner-friendly explainer for the ATR-based auto exit — no risk-profile
