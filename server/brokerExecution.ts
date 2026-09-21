@@ -6,8 +6,8 @@
 // reality. Every such case halts trading for a human rather than continuing on
 // a wrong picture, which is how a small error turns into a large one.
 
-import { getKisConfig, placeOrder, fetchBalance, reconcilePositions } from './kisClient';
-import type { BrokerOrderRecord, TradeOrder } from '../src/types';
+import { getKisConfig, placeOrder, fetchBalance, reconcilePositions, type KisPosition } from './kisClient';
+import type { BrokerOrderRecord, PortfolioState, TradeOrder } from '../src/types';
 
 /**
  * Limit orders need a price that actually fills. Crossing the spread by this
@@ -25,6 +25,26 @@ const RECONCILE_GRACE_MS = 10 * 60 * 1000;
 
 export function isBrokerConnected(): boolean {
   return getKisConfig() !== null;
+}
+
+/**
+ * Whether KRX is currently trading (09:00-15:30 KST, weekdays).
+ *
+ * The scheduled tick runs around the clock, but orders only reach an open
+ * exchange. Without this the worst case is precise: SPY closes below its trend
+ * line at roughly 05:00 KST, the next tick tries to sell into a shut market,
+ * the rejection trips the halt, and the system is still paused when KRX opens
+ * four hours later — failing at exactly the moment the strategy exists for.
+ *
+ * Public holidays are NOT known here. An order on one would be rejected and
+ * pause trading, which is safe but needs a manual resume.
+ */
+export function isKrxOpen(now: Date = new Date()): boolean {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  const weekday = kst.getUTCDay();
+  if (weekday === 0 || weekday === 6) return false;
+  const minutesIntoDay = kst.getUTCHours() * 60 + kst.getUTCMinutes();
+  return minutesIntoDay >= 9 * 60 && minutesIntoDay <= 15 * 60 + 30;
 }
 
 /** Which account the orders would go to — surfaced so the UI can never hide that it is real. */
@@ -100,11 +120,50 @@ export async function executeOrders(orders: TradeOrder[]): Promise<BrokerExecuti
   return { records, halt: null };
 }
 
+/**
+ * Corrects our recorded cost basis to the broker's.
+ *
+ * Orders fill at whatever the market gives, not at the price the decision was
+ * made on — the first live buy was booked at 23,970 and filled at 23,964.
+ * Reconciliation only compares quantities, so without this the difference
+ * compounds quietly with every trade until valuation no longer matches the
+ * account. The broker's number is the real one; ours should follow it.
+ */
+export function syncCostBasisFromBroker(portfolio: PortfolioState, brokerPositions: KisPosition[]): PortfolioState {
+  if (!brokerPositions.length) return portfolio;
+  const bySymbol = new Map(brokerPositions.map((p) => [p.symbol, p]));
+
+  const sweepAtBroker = portfolio.cashSweep ? bySymbol.get(portfolio.cashSweep.symbol) : undefined;
+  return {
+    ...portfolio,
+    positions: portfolio.positions.map((p) => {
+      const broker = bySymbol.get(p.symbol);
+      if (!broker?.avgPriceKrw) return p;
+      return {
+        ...p,
+        avgBuyPriceKrw: broker.avgPriceKrw,
+        // KRX holdings are quoted in KRW, so the native price is the same number.
+        avgBuyPriceNative: p.currency === 'KRW' ? broker.avgPriceKrw : p.avgBuyPriceNative,
+      };
+    }),
+    cashSweep:
+      portfolio.cashSweep && sweepAtBroker?.avgPriceKrw
+        ? {
+            ...portfolio.cashSweep,
+            avgBuyPriceKrw: sweepAtBroker.avgPriceKrw,
+            avgBuyPriceNative: sweepAtBroker.avgPriceKrw,
+          }
+        : portfolio.cashSweep,
+  };
+}
+
 export interface BrokerVerification {
   ok: boolean;
   /** True when the check was deliberately skipped (no broker, or a fill still settling). */
   skipped: boolean;
   message: string;
+  /** The broker's own holdings when the check actually ran — the reference for correcting our recorded prices. */
+  brokerPositions?: KisPosition[];
 }
 
 /**
@@ -115,6 +174,7 @@ export interface BrokerVerification {
  * mismatch that resolves itself minutes later.
  */
 export async function verifyAgainstBroker(
+  /** Must include the treasury sweep: it is a real holding at the account, not just a ledger entry. */
   ourPositions: { symbol: string; quantity: number }[],
   lastBrokerOrderAt: string | null
 ): Promise<BrokerVerification> {
@@ -131,7 +191,7 @@ export async function verifyAgainstBroker(
     const balance = await fetchBalance();
     if (!balance) return { ok: true, skipped: true, message: '증권사 미연결 (페이퍼 모드)' };
     const result = reconcilePositions(ourPositions, balance.positions);
-    return { ok: result.ok, skipped: false, message: result.message };
+    return { ok: result.ok, skipped: false, message: result.message, brokerPositions: balance.positions };
   } catch (err) {
     // A failed check is not a passed check: if we cannot confirm the broker's
     // view, we should not trade against a possibly-stale one.

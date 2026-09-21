@@ -36,8 +36,15 @@ const RISK_PER_TRADE_PERCENT = 0.01; // risk 1% of the portfolio per position
 // touches todayTradesCount/winCount/lossCount/tradeOrders — it's cash
 // management, not a trading decision the win-rate/expectancy tracking
 // (see docs/paper-trading-log.md) should see.
-export const CASH_SWEEP_SYMBOL = 'SGOV';
-const CASH_SWEEP_NAME = '미국 단기국채 ETF (SGOV)';
+// A KRX-listed money-market ETF, not SGOV. Orders go through the domestic API,
+// so the parking instrument has to be domestic too — a US ticker could be
+// tracked in the ledger but never actually bought, leaving the book claiming a
+// holding the account does not have.
+export const CASH_SWEEP_SYMBOL = '272580';
+const CASH_SWEEP_NAME = 'TIGER 머니마켓액티브';
+const CASH_SWEEP_MARKET: Market = 'KRX';
+const CASH_SWEEP_CURRENCY = 'KRW' as const;
+const CASH_SWEEP_EXCHANGE = '코스피';
 const MIN_CASH_SWEEP_KRW = 10000; // skip sweeps too small to matter
 
 export interface CashSweepQuote {
@@ -51,19 +58,48 @@ function markCashSweepToMarket(portfolio: PortfolioState, quote: CashSweepQuote 
   return { ...portfolio, cashSweep: { ...portfolio.cashSweep, currentValueKrw: portfolio.cashSweep.quantity * quote.priceKrw } };
 }
 
-/** Fully liquidates the treasury sweep back to cash — used before sizing a new stock buy, and on session exit. */
-export function liquidateCashSweep(portfolio: PortfolioState, quote: CashSweepQuote | null): PortfolioState {
-  if (!portfolio.cashSweep) return portfolio;
-  const priceKrw = quote?.priceKrw ?? portfolio.cashSweep.avgBuyPriceKrw;
-  const proceeds = portfolio.cashSweep.quantity * priceKrw;
-  return { ...portfolio, cashBalance: portfolio.cashBalance + proceeds, cashSweep: null };
+/**
+ * Fully liquidates the treasury sweep back to cash — used before sizing a new
+ * stock buy, and on session exit.
+ *
+ * Returns the matching order so the caller can send it to the broker. Sweep
+ * moves are real trades at the account level even though they are cash
+ * management rather than strategy decisions.
+ */
+export function liquidateCashSweep(
+  portfolio: PortfolioState,
+  quote: CashSweepQuote | null
+): { portfolio: PortfolioState; order: TradeOrder | null } {
+  if (!portfolio.cashSweep) return { portfolio, order: null };
+  const sweep = portfolio.cashSweep;
+  const priceKrw = quote?.priceKrw ?? sweep.avgBuyPriceKrw;
+  const priceNative = quote?.priceNative ?? sweep.avgBuyPriceNative;
+  const proceeds = sweep.quantity * priceKrw;
+  return {
+    portfolio: { ...portfolio, cashBalance: portfolio.cashBalance + proceeds, cashSweep: null },
+    order: makeOrder(
+      'SELL',
+      CASH_SWEEP_SYMBOL,
+      CASH_SWEEP_NAME,
+      CASH_SWEEP_MARKET,
+      CASH_SWEEP_CURRENCY,
+      priceKrw,
+      priceNative,
+      sweep.quantity,
+      '대기 자금을 다시 현금으로 돌렸습니다.',
+      80
+    ),
+  };
 }
 
 /** Parks whatever cash is left idle into the treasury sweep, averaging cost with any existing holding. */
-function sweepIdleCashIntoTreasury(portfolio: PortfolioState, quote: CashSweepQuote | null): PortfolioState {
-  if (!quote || portfolio.cashBalance < MIN_CASH_SWEEP_KRW) return portfolio;
+function sweepIdleCashIntoTreasury(
+  portfolio: PortfolioState,
+  quote: CashSweepQuote | null
+): { portfolio: PortfolioState; order: TradeOrder | null } {
+  if (!quote || portfolio.cashBalance < MIN_CASH_SWEEP_KRW) return { portfolio, order: null };
   const addQty = Math.floor(portfolio.cashBalance / quote.priceKrw);
-  if (addQty <= 0) return portfolio;
+  if (addQty <= 0) return { portfolio, order: null };
   const cost = addQty * quote.priceKrw;
   const existing = portfolio.cashSweep;
   const totalQty = (existing?.quantity ?? 0) + addQty;
@@ -72,16 +108,30 @@ function sweepIdleCashIntoTreasury(portfolio: PortfolioState, quote: CashSweepQu
     ? (existing.avgBuyPriceNative * existing.quantity + quote.priceNative * addQty) / totalQty
     : quote.priceNative;
   return {
-    ...portfolio,
-    cashBalance: portfolio.cashBalance - cost,
-    cashSweep: {
-      symbol: CASH_SWEEP_SYMBOL,
-      name: CASH_SWEEP_NAME,
-      quantity: totalQty,
-      avgBuyPriceNative,
-      avgBuyPriceKrw,
-      currentValueKrw: totalQty * quote.priceKrw,
+    portfolio: {
+      ...portfolio,
+      cashBalance: portfolio.cashBalance - cost,
+      cashSweep: {
+        symbol: CASH_SWEEP_SYMBOL,
+        name: CASH_SWEEP_NAME,
+        quantity: totalQty,
+        avgBuyPriceNative,
+        avgBuyPriceKrw,
+        currentValueKrw: totalQty * quote.priceKrw,
+      },
     },
+    order: makeOrder(
+      'BUY',
+      CASH_SWEEP_SYMBOL,
+      CASH_SWEEP_NAME,
+      CASH_SWEEP_MARKET,
+      CASH_SWEEP_CURRENCY,
+      quote.priceKrw,
+      quote.priceNative,
+      addQty,
+      '남는 현금을 대기 자금으로 넣어 이자를 받습니다.',
+      80
+    ),
   };
 }
 
@@ -240,6 +290,12 @@ export function sellPositionNow(
 export interface PortfolioTickResult {
   portfolio: PortfolioState;
   orders: TradeOrder[];
+  /**
+   * Treasury-sweep moves. Executed at the broker like any other order, but kept
+   * out of `orders` so win rate and expectancy stay about strategy decisions
+   * rather than cash management.
+   */
+  cashSweepOrders: TradeOrder[];
   justHitTargetProfit: boolean;
 }
 
@@ -341,8 +397,11 @@ export function runPortfolioTick(
   // Reclaim any cash currently parked in the treasury sweep before sizing new
   // stock buys — the full liquid balance should be available, not just
   // whatever happened to be sitting outside SGOV.
+  const cashSweepOrders: TradeOrder[] = [];
   if (buyCandidates.length > 0) {
-    working = liquidateCashSweep(working, cashSweepQuote);
+    const liquidated = liquidateCashSweep(working, cashSweepQuote);
+    working = liquidated.portfolio;
+    if (liquidated.order) cashSweepOrders.push(liquidated.order);
   }
 
   // Portfolio value used as the risk base for sizing every buy this tick —
@@ -398,7 +457,9 @@ export function runPortfolioTick(
 
   // 2.5) Park whatever cash is left idle after this tick's stock trades into
   //      the treasury sweep rather than let it sit earning nothing.
-  working = sweepIdleCashIntoTreasury(working, cashSweepQuote);
+  const swept = sweepIdleCashIntoTreasury(working, cashSweepQuote);
+  working = swept.portfolio;
+  if (swept.order) cashSweepOrders.push(swept.order);
 
   // 3) Recompute aggregate valuation from cash + all positions' latest KRW price.
   //    (Uses each held position's analysis price where available; positions
@@ -414,6 +475,7 @@ export function runPortfolioTick(
   return {
     portfolio: { ...working, currentValuation, totalPnL, totalPnLPercent },
     orders,
+    cashSweepOrders,
     justHitTargetProfit,
   };
 }
@@ -507,8 +569,11 @@ export function runTrendTick(
       i.decisionCloseKrw > i.sma200Krw &&
       !working.positions.some((p) => p.symbol === i.symbol)
   );
+  const cashSweepOrders: TradeOrder[] = [];
   if (buyable.length > 0) {
-    working = liquidateCashSweep(working, cashSweepQuote);
+    const liquidated = liquidateCashSweep(working, cashSweepQuote);
+    working = liquidated.portfolio;
+    if (liquidated.order) cashSweepOrders.push(liquidated.order);
     let slotsLeft = buyable.length;
     for (const input of buyable) {
       const cashToSpend = working.cashBalance / slotsLeft;
@@ -537,7 +602,9 @@ export function runTrendTick(
   }
 
   // 3) Park whatever is idle — in this strategy that is the entire "risk off" state.
-  working = sweepIdleCashIntoTreasury(working, cashSweepQuote);
+  const swept = sweepIdleCashIntoTreasury(working, cashSweepQuote);
+  working = swept.portfolio;
+  if (swept.order) cashSweepOrders.push(swept.order);
 
   const holdingsValuation = working.positions.reduce(
     (sum, p) => sum + p.quantity * (priceBySymbol.get(p.symbol) ?? p.avgBuyPriceKrw),
@@ -550,6 +617,7 @@ export function runTrendTick(
   return {
     portfolio: { ...working, currentValuation, totalPnL, totalPnLPercent },
     orders,
+    cashSweepOrders,
     justHitTargetProfit: false,
   };
 }
