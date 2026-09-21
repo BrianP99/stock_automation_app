@@ -1,6 +1,7 @@
 import type { Config } from '@netlify/functions';
 import { getStockAnalysis } from '../../server/marketData';
 import { sellPositionNow, liquidateCashSweep, CASH_SWEEP_SYMBOL } from '../../server/tradingEngine';
+import { executeOrders } from '../../server/brokerExecution';
 import { getCurrentSession, saveCurrentSession } from '../../server/sessionStore';
 import { notifyDiscordTrade, notifyDiscordTrades, notifyDiscordSummary } from '../../server/discord';
 import type { TradingConfig } from '../../src/types';
@@ -58,6 +59,22 @@ export default async (req: Request) => {
       session.tradeOrders = [result.order, ...session.tradeOrders];
       session.latestAiMessage = result.order.reason;
 
+      // Send it to the broker too, or the book would say sold while the account
+      // still holds the shares.
+      const execution = await executeOrders([result.order]);
+      if (execution.records.length) {
+        session.brokerOrders = [...execution.records, ...(session.brokerOrders || [])];
+      }
+      if (execution.halt) {
+        session.isPaused = true;
+        session.latestAiMessage = `${execution.halt} 자동매매는 정지했습니다.`;
+        await saveCurrentSession(session);
+        return new Response(JSON.stringify({ error: session.latestAiMessage, session }), {
+          status: 502,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
       const notifyResult = await notifyDiscordTrade(result.order);
       session.notificationLog = [
         {
@@ -106,6 +123,38 @@ export default async (req: Request) => {
         .then((a) => ({ priceNative: a.nativePrice, priceKrw: a.price }))
         .catch(() => null); // falls back to last-known price inside liquidateCashSweep
       session.portfolio = liquidateCashSweep(session.portfolio, sweepQuote);
+    }
+
+    // Route the liquidation through the broker before declaring anything done.
+    const execution = await executeOrders(exitOrders);
+    if (execution.records.length) {
+      session.brokerOrders = [...execution.records, ...(session.brokerOrders || [])];
+    }
+    if (execution.halt) {
+      // The account may still hold what the book just marked as sold. Ending the
+      // session here would drop that position out of sight, so keep it on screen
+      // and paused so it can be retried or handled by hand.
+      session.isPaused = true;
+      session.latestAiMessage =
+        `${execution.halt} 자동매매는 정지했습니다. 증권사 앱에서 보유 내역을 직접 확인해주세요.`;
+      const haltNotify = await notifyDiscordSummary(session.portfolio, [], '🛑 전량 매도 실패 — 자동매매 정지');
+      session.notificationLog = [
+        {
+          id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          timestamp: new Date().toISOString(),
+          kind: 'summary',
+          title: '전량 매도 실패 — 자동매매 정지',
+          detail: execution.halt,
+          ok: haltNotify.ok,
+          ...(haltNotify.ok ? {} : { error: haltNotify.error || `HTTP ${haltNotify.status}` }),
+        },
+        ...(session.notificationLog || []),
+      ];
+      await saveCurrentSession(session);
+      return new Response(JSON.stringify({ error: session.latestAiMessage, session }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
     if (exitOrders.length) {

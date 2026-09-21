@@ -42,7 +42,12 @@ const TREND_SIGNAL_SYMBOL = 'SPY';
 const TREND_TRADE_SYMBOL = '379800';
 const TREND_NAME = 'KODEX 미국S&P500';
 
-async function fetchSessionState(): Promise<{ active: boolean; session?: TradingSession }> {
+interface BrokerStatus {
+  connected: boolean;
+  environment: 'paper' | 'real' | null;
+}
+
+async function fetchSessionState(): Promise<{ active: boolean; session?: TradingSession; broker?: BrokerStatus }> {
   const res = await fetch('/api/session/state');
   if (!res.ok) throw new Error('세션 상태를 불러오지 못했습니다.');
   return res.json();
@@ -67,6 +72,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
   onOpenSmsPreview,
 }) => {
   const [session, setSession] = useState<TradingSession | null>(null);
+  const [broker, setBroker] = useState<BrokerStatus | null>(null);
   const [initializing, setInitializing] = useState<boolean>(true);
   const [initError, setInitError] = useState<string | null>(null);
   const { mode: currencyMode } = useCurrencyDisplay();
@@ -91,6 +97,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
     try {
       const state = await fetchSessionState();
       setConnectionError(null);
+      setBroker(state.broker ?? null);
       if (!state.active || !state.session) {
         // The scheduled tick (or another tab's panic-exit) ended the session.
         onResetSetup();
@@ -117,6 +124,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
       try {
         const state = await fetchSessionState();
         if (cancelled) return;
+        setBroker(state.broker ?? null);
         if (!state.active || !state.session) {
           setInitError('진행 중인 자동매매 세션을 찾을 수 없습니다.');
           return;
@@ -308,6 +316,30 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
         <div className="bg-amber-50 border border-amber-300 text-amber-800 rounded-2xl p-4 flex items-center gap-3 text-sm font-semibold">
           <AlertTriangle className="w-5 h-5 shrink-0" />
           <span>{connectionError || `최근 자동 확인 중 오류가 발생했습니다: ${lastError}`}</span>
+        </div>
+      )}
+
+      {/* Whether orders are real has to be visible without being looked for.
+          A paper run and a live one must never look the same on screen. */}
+      {broker?.connected && (
+        <div
+          className={`rounded-2xl px-5 py-3.5 border flex items-center gap-3 ${
+            broker.environment === 'real'
+              ? 'bg-red-50 border-red-300 text-red-900'
+              : 'bg-sky-50 border-sky-200 text-sky-900'
+          }`}
+        >
+          <ServerCog className={`w-5 h-5 shrink-0 ${broker.environment === 'real' ? 'text-red-600' : 'text-sky-600'}`} />
+          <div className="text-sm">
+            <span className="font-extrabold">
+              {broker.environment === 'real' ? '실전투자 계좌 연결됨 — 실제 돈이 오갑니다' : '모의투자 계좌 연결됨'}
+            </span>
+            <span className="ml-2 text-xs opacity-80">
+              {broker.environment === 'real'
+                ? '매수·매도 버튼이 실제 주문을 냅니다.'
+                : '주문은 한국투자증권 모의계좌로 나갑니다. 실제 돈은 사용되지 않습니다.'}
+            </span>
+          </div>
         </div>
       )}
 
