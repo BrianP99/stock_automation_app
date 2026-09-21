@@ -50,6 +50,27 @@ export interface Position {
   highestPriceKrwSinceOpen: number;
 }
 
+/**
+ * One request actually sent to the broker. Kept separately from TradeOrder:
+ * a TradeOrder is what the strategy decided, this is what the broker was told
+ * and what it said back. When the two disagree, this record is the evidence.
+ */
+export interface BrokerOrderRecord {
+  id: string;
+  timestamp: string;
+  /** Ties back to the TradeOrder that caused it. */
+  clientOrderId: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  quantity: number;
+  limitPriceKrw: number;
+  /** 'accepted' means the broker took the request — not that it filled. 'unknown' must never be retried. */
+  status: 'accepted' | 'rejected' | 'unknown';
+  orderNo?: string;
+  code?: string;
+  message?: string;
+}
+
 /** One row in the "알림 로그" — every attempted Discord push, success or failure. */
 export interface NotificationLogEntry {
   id: string;
@@ -191,4 +212,6 @@ export interface TradingSession {
   lastError: string | null;
   /** Portfolio value at the start of the current Asia/Seoul day — the daily-loss circuit breaker's reference point. */
   dayStartValuation?: number;
+  /** Every request sent to the broker, newest first. Empty while running on paper. */
+  brokerOrders?: BrokerOrderRecord[];
 }

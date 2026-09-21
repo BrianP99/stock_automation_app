@@ -463,6 +463,24 @@ export function runTrendTick(
   const orders: TradeOrder[] = [];
   const priceBySymbol = new Map(inputs.map((i) => [i.symbol, i.priceKrw]));
 
+  // 0.5) Drop anything held that the strategy no longer trades at all. This
+  //      covers switching the traded instrument (e.g. SPY to a KRX-listed
+  //      tracker): without it the old holding would sit there forever, never
+  //      evaluated by any rule.
+  const tradedSymbols = new Set(inputs.map((i) => i.symbol));
+  for (const position of working.positions.filter((p) => !tradedSymbols.has(p.symbol))) {
+    const result = closePosition(
+      working,
+      position,
+      position.avgBuyPriceKrw,
+      position.avgBuyPriceNative,
+      `${position.name}은(는) 더 이상 이 전략의 매매 대상이 아니어서 정리했습니다.`,
+      80
+    );
+    working = result.portfolio;
+    orders.push(result.order);
+  }
+
   // 1) Exit anything that has dropped below its trend line.
   for (const input of inputs) {
     const position = working.positions.find((p) => p.symbol === input.symbol);

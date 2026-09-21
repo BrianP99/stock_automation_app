@@ -237,10 +237,10 @@ export const SetupWizard: React.FC<SetupWizardProps> = ({ onStartTrading, fontSi
                 </div>
               </div>
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4">
-                <div className="font-extrabold text-slate-900">S&amp;P 500 지수 ETF</div>
+                <div className="font-extrabold text-slate-900">KODEX 미국S&amp;P500</div>
                 <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                  미국 대표 500개 기업을 통째로 담습니다. 이 지수가 200일 추세선 위에 있으면 보유하고, 아래로 내려가면 전량
-                  팔아서 단기국채로 대피합니다.
+                  미국 대표 500개 기업을 통째로 담는 국내 상장 ETF입니다. S&amp;P 500 지수가 200일 추세선 위에 있으면
+                  보유하고, 아래로 내려가면 전량 팔아서 단기국채로 대피합니다.
                 </p>
               </div>
               <p className="text-[11px] text-slate-400 mt-3 leading-relaxed">
