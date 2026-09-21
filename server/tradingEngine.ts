@@ -433,10 +433,18 @@ export interface TrendTickInput {
   sector: string;
   description: string;
   currency: 'KRW' | 'USD';
+  /** Live price — what a fill is priced at. */
   priceKrw: number;
   priceNative: number;
   atrKrw: number | null;
-  /** The decision line. Null means "can't confirm the trend" and is treated as do-not-buy. */
+  /**
+   * The signal is judged on the last SETTLED daily close, never the live price.
+   * Yahoo's current-day bar moves all session, so comparing it against the
+   * trend line would let one intraday dip sell the position and the recovery
+   * buy it straight back — several round trips a day, right at the moment the
+   * strategy matters. Null means "can't confirm the trend": hold, never buy.
+   */
+  decisionCloseKrw: number | null;
   sma200Krw: number | null;
 }
 
@@ -458,8 +466,8 @@ export function runTrendTick(
   // 1) Exit anything that has dropped below its trend line.
   for (const input of inputs) {
     const position = working.positions.find((p) => p.symbol === input.symbol);
-    if (!position || input.sma200Krw == null) continue;
-    if (input.priceKrw < input.sma200Krw) {
+    if (!position || input.sma200Krw == null || input.decisionCloseKrw == null) continue;
+    if (input.decisionCloseKrw < input.sma200Krw) {
       const result = closePosition(
         working,
         position,
@@ -475,7 +483,11 @@ export function runTrendTick(
 
   // 2) Enter anything above its trend line that we don't already hold.
   const buyable = inputs.filter(
-    (i) => i.sma200Krw != null && i.priceKrw > i.sma200Krw && !working.positions.some((p) => p.symbol === i.symbol)
+    (i) =>
+      i.sma200Krw != null &&
+      i.decisionCloseKrw != null &&
+      i.decisionCloseKrw > i.sma200Krw &&
+      !working.positions.some((p) => p.symbol === i.symbol)
   );
   if (buyable.length > 0) {
     working = liquidateCashSweep(working, cashSweepQuote);

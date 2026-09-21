@@ -93,7 +93,9 @@ async function runIndexTrendTick(resetPortfolio: PortfolioState, cashSweepQuote:
           priceKrw: a.price,
           priceNative: a.nativePrice,
           atrKrw: a.atrKrw,
-          sma200Krw: a.sma200Krw,
+          // Decide on the settled daily close, fill at the live price.
+          decisionCloseKrw: a.trendCloseKrw,
+          sma200Krw: a.trendSma200Krw,
         } as TrendTickInput;
       } catch {
         return null;
@@ -106,8 +108,11 @@ async function runIndexTrendTick(resetPortfolio: PortfolioState, cashSweepQuote:
   }
 
   const watchlist: WatchlistCandidate[] = inputs.map((i) => {
-    const above = i.sma200Krw != null && i.priceKrw > i.sma200Krw;
-    const gap = i.sma200Krw ? ((i.priceKrw - i.sma200Krw) / i.sma200Krw) * 100 : 0;
+    // Show the same numbers the decision uses, or the panel would report a gap
+    // that doesn't match what the engine acted on.
+    const decided = i.decisionCloseKrw;
+    const above = i.sma200Krw != null && decided != null && decided > i.sma200Krw;
+    const gap = i.sma200Krw && decided != null ? ((decided - i.sma200Krw) / i.sma200Krw) * 100 : 0;
     return {
       symbol: i.symbol,
       name: i.name,
@@ -116,12 +121,12 @@ async function runIndexTrendTick(resetPortfolio: PortfolioState, cashSweepQuote:
       currency: i.currency,
       sector: i.sector,
       description: i.description,
-      action: i.sma200Krw == null ? 'HOLD' : above ? 'BUY' : 'SELL',
+      action: i.sma200Krw == null || decided == null ? 'HOLD' : above ? 'BUY' : 'SELL',
       confidence: 90,
       reason:
-        i.sma200Krw == null
+        i.sma200Krw == null || decided == null
           ? '200일 추세선을 계산할 데이터가 아직 부족합니다.'
-          : `200일 추세선 ${above ? '위' : '아래'} (${gap >= 0 ? '+' : ''}${gap.toFixed(1)}%)`,
+          : `200일 추세선 ${above ? '위' : '아래'} (${gap >= 0 ? '+' : ''}${gap.toFixed(1)}%, 전일 종가 기준)`,
       scannedAt: now,
     };
   });
