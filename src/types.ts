@@ -122,6 +122,9 @@ export interface StockAnalysisResponse {
   atrKrw: number | null;
   /** 200-day SMA in KRW — the index-trend strategy's decision line. Null until 200 bars exist. */
   sma200Krw: number | null;
+  /** Close of the last settled daily bar, and its SMA200 — what index-trend decides on, so an intraday wobble can't flip the signal mid-session. */
+  trendCloseKrw: number | null;
+  trendSma200Krw: number | null;
 }
 
 /** A symbol the scanner currently likes, shown in the watchlist panel for transparency. */

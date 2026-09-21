@@ -242,6 +242,18 @@ export interface StockAnalysis {
   atrKrw: number | null;
   /** 200-day SMA, KRW — the long-term trend line. Gates every BUY in 'ai-picks' and is the whole decision in 'index-trend'. Null until 200 bars exist. */
   sma200Krw: number | null;
+  /**
+   * Close of the most recent SETTLED daily bar, KRW, with its own SMA200.
+   *
+   * Yahoo's latest daily bar keeps moving while the market is open, so judging a
+   * 200-day trend against it lets one intraday wobble flip the signal several
+   * times in a session — the same daily-rule/5-minute-check mismatch that made
+   * the ATR stops fire on noise. These two are taken one bar back, where the
+   * data can no longer change, and are what the index-trend strategy decides on.
+   * Execution still fills at the live price.
+   */
+  trendCloseKrw: number | null;
+  trendSma200Krw: number | null;
 }
 
 const HISTORY_POINTS_RETURNED = 90;
@@ -321,6 +333,14 @@ export async function getStockAnalysis(symbol: string): Promise<StockAnalysis> {
     };
   });
 
+  // One bar back on the UNSPLICED daily series: the latest bar is still forming
+  // while the market is open, so only this one is final. The index-trend
+  // strategy decides on these instead of the live price.
+  const settledIdx = daily.close.length - 2;
+  const settledSma200Series = sma(daily.close, 200);
+  const settledClose = settledIdx >= 0 ? daily.close[settledIdx] : null;
+  const settledSma200 = settledIdx >= 0 ? settledSma200Series[settledIdx] : null;
+
   const nativePrice = closes[n - 1];
   // Prefer the previous bar from our own fetched series — Yahoo's `chartPreviousClose`
   // meta field has been observed to go stale/incorrect for some symbols (e.g. reflecting
@@ -347,6 +367,8 @@ export async function getStockAnalysis(symbol: string): Promise<StockAnalysis> {
     signal,
     atrKrw: nativeAtr14 != null ? Math.round(nativeAtr14 * fxRate) : null,
     sma200Krw: sma200Series[n - 1] != null ? Math.round((sma200Series[n - 1] as number) * fxRate) : null,
+    trendCloseKrw: settledClose != null ? Math.round(settledClose * fxRate) : null,
+    trendSma200Krw: settledSma200 != null ? Math.round(settledSma200 * fxRate) : null,
   };
 }
 
