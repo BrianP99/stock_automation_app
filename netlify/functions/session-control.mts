@@ -122,7 +122,10 @@ export default async (req: Request) => {
       const sweepQuote = await getStockAnalysis(CASH_SWEEP_SYMBOL)
         .then((a) => ({ priceNative: a.nativePrice, priceKrw: a.price }))
         .catch(() => null); // falls back to last-known price inside liquidateCashSweep
-      session.portfolio = liquidateCashSweep(session.portfolio, sweepQuote);
+      const liquidated = liquidateCashSweep(session.portfolio, sweepQuote);
+      session.portfolio = liquidated.portfolio;
+      // The sweep is a real holding at the account, so exiting has to sell it too.
+      if (liquidated.order) exitOrders.push(liquidated.order);
     }
 
     // Route the liquidation through the broker before declaring anything done.

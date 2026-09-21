@@ -14,7 +14,13 @@ import {
 import { getCurrentSession, saveCurrentSession, type StoredSession } from '../../server/sessionStore';
 import { TRADING_UNIVERSE } from '../../server/data/curatedUniverse';
 import { TREND_UNIVERSE } from '../../server/data/trendUniverse';
-import { executeOrders, verifyAgainstBroker } from '../../server/brokerExecution';
+import {
+  executeOrders,
+  verifyAgainstBroker,
+  syncCostBasisFromBroker,
+  isBrokerConnected,
+  isKrxOpen,
+} from '../../server/brokerExecution';
 import { notifyDiscordTrades, notifyDiscordSummary } from '../../server/discord';
 import type { PortfolioState, StrategyMode, WatchlistCandidate } from '../../src/types';
 
@@ -160,18 +166,46 @@ export default async () => {
 
   const mode: StrategyMode = session.config.strategyMode ?? 'ai-picks';
 
+  // Stock picking spans ~225 KRX and US names, and the broker path only places
+  // domestic orders. Running it against a live account would trade the US half
+  // on paper while the KRX half went to the exchange — a book that is half real.
+  if (mode === 'ai-picks' && isBrokerConnected() && !session.isPaused) {
+    session.isPaused = true;
+    session.latestAiMessage =
+      'AI 종목선정은 미국 종목을 포함해 증권사 연동으로 주문할 수 없습니다. 지수 추세추종으로 전환하거나 증권사 연결을 해제해주세요.';
+    await notifyAndLog(session, '🛑 증권사 연동과 호환되지 않는 전략 — 정지', session.latestAiMessage);
+    await saveCurrentSession(session);
+    return;
+  }
+
   try {
     if (mode === 'index-trend') {
       const now = new Date().toISOString();
       const { portfolio: resetPortfolio, date } = resetDailyCountersIfNewDay(session.portfolio, session.lastTradeDate);
       const isNewDay = date !== session.lastTradeDate;
 
+      // Orders only reach an open exchange. Deciding while KRX is shut would
+      // update the book and then fail to place the trade, so skip the whole
+      // decision until it opens; the signal is drawn from daily closes and will
+      // still be there.
+      if (isBrokerConnected() && !isKrxOpen()) {
+        session.lastTickAt = now;
+        session.lastError = null;
+        session.latestAiMessage = '한국 증시가 열려 있지 않아 대기 중입니다. 장 시작 후 판단합니다.';
+        await saveCurrentSession(session);
+        return;
+      }
+
       // Check our book against the broker's BEFORE deciding anything. Trading
-      // on a stale picture is how one bad fill becomes a series of them.
-      const verification = await verifyAgainstBroker(
-        resetPortfolio.positions.map((p) => ({ symbol: p.symbol, quantity: p.quantity })),
-        session.brokerOrders?.[0]?.timestamp ?? null
-      );
+      // on a stale picture is how one bad fill becomes a series of them. The
+      // sweep is included: it is a real holding at the account.
+      const ourHoldings = [
+        ...resetPortfolio.positions.map((p) => ({ symbol: p.symbol, quantity: p.quantity })),
+        ...(resetPortfolio.cashSweep
+          ? [{ symbol: resetPortfolio.cashSweep.symbol, quantity: resetPortfolio.cashSweep.quantity }]
+          : []),
+      ];
+      const verification = await verifyAgainstBroker(ourHoldings, session.brokerOrders?.[0]?.timestamp ?? null);
       if (!verification.ok) {
         session.isPaused = true;
         session.lastTickAt = now;
@@ -185,11 +219,19 @@ export default async () => {
         .then((a) => ({ priceNative: a.nativePrice, priceKrw: a.price }))
         .catch(() => null);
 
-      const { result, watchlist } = await runIndexTrendTick(resetPortfolio, cashSweepQuote, now);
+      // Adopt the broker's cost basis before deciding, so valuation is measured
+      // against what the account actually paid.
+      const basePortfolio = verification.brokerPositions
+        ? syncCostBasisFromBroker(resetPortfolio, verification.brokerPositions)
+        : resetPortfolio;
+
+      const { result, watchlist } = await runIndexTrendTick(basePortfolio, cashSweepQuote, now);
 
       // Send the decisions to the broker (a no-op while unconnected). Any
       // failure halts: the portfolio above already assumes these went through.
-      const execution = await executeOrders(result.orders);
+      // Sweep moves go too — they are real orders at the account even though
+      // they are kept out of the strategy's trade history.
+      const execution = await executeOrders([...result.orders, ...result.cashSweepOrders]);
       if (execution.records.length) {
         session.brokerOrders = [...execution.records, ...(session.brokerOrders || [])];
       }
