@@ -18,6 +18,7 @@ import {
 import { HoldingsPanel } from './HoldingsPanel';
 import { WatchlistPanel } from './WatchlistPanel';
 import { RealizedPnlPanel } from './RealizedPnlPanel';
+import { TrendStatusPanel } from './TrendStatusPanel';
 import { useCurrencyDisplay, formatStockPrice } from '../lib/currencyDisplay';
 import { useChartModal } from '../lib/chartModal';
 import { CompanyLogo } from './CompanyLogo';
@@ -33,6 +34,12 @@ interface TradingDashboardProps {
 // 5s (was 20s) — feels live like other stock apps; this just re-reads the
 // session blob (no external API calls), so it's cheap to poll often.
 const POLL_INTERVAL_MS = 5000;
+
+// The index-trend strategy holds exactly one thing; keep its identity here so
+// the panel and the holdings check can't drift apart. Mirrors
+// server/data/trendUniverse.ts.
+const TREND_SYMBOL = 'SPY';
+const TREND_NAME = 'S&P 500 지수';
 
 async function fetchSessionState(): Promise<{ active: boolean; session?: TradingSession }> {
   const res = await fetch('/api/session/state');
@@ -216,6 +223,7 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
   const { portfolio, tradeOrders, watchlist, latestAiMessage, isPaused, lastTickAt, lastError } = session;
   const isProfit = portfolio.totalPnL >= 0;
   const heldSymbols = new Set(portfolio.positions.map((p) => p.symbol));
+  const isIndexTrend = config.strategyMode === 'index-trend';
 
   return (
     <div className={`max-w-7xl mx-auto px-4 py-6 space-y-6 ${fontSizeClass}`}>
@@ -356,27 +364,68 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
           </div>
         </div>
 
+        {/* Win rate is meaningless for index-trend — it trades a few times a
+            year, so the number would sit at 0% or 100% on a sample of one.
+            Show the circuit breaker instead, which is what actually matters. */}
         <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-sm flex flex-col justify-between">
-          <div>
-            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-              <span>AI 승률 & 안전장치</span>
-              <ShieldAlert className="w-4 h-4 text-emerald-400" />
-            </div>
-            <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-2">
-              {portfolio.todayTradesCount > 0 ? ((portfolio.winCount / portfolio.todayTradesCount) * 100).toFixed(1) : '100'}
-              <span className="text-base font-bold text-slate-300 ml-1">% 승률</span>
-            </div>
-          </div>
-          <div className="mt-3 pt-2 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between">
-            <span>손절: 종목별 변동성(ATR) 기반</span>
-            <span className="text-emerald-400 font-bold">안전 작동 중</span>
-          </div>
+          {isIndexTrend ? (
+            <>
+              <div>
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                  <span>자동 안전장치</span>
+                  <ShieldAlert className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-2">
+                  -{config.maxDailyLossPercent ?? 5}
+                  <span className="text-base font-bold text-slate-300 ml-1">% 손실 시 정지</span>
+                </div>
+              </div>
+              <div className="mt-3 pt-2 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between">
+                <span>하루 시작값 기준</span>
+                <span className="text-emerald-400 font-bold">감시 중</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div>
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                  <span>AI 승률 & 안전장치</span>
+                  <ShieldAlert className="w-4 h-4 text-emerald-400" />
+                </div>
+                <div className="text-2xl sm:text-3xl font-black text-emerald-400 mt-2">
+                  {portfolio.todayTradesCount > 0
+                    ? ((portfolio.winCount / portfolio.todayTradesCount) * 100).toFixed(1)
+                    : '100'}
+                  <span className="text-base font-bold text-slate-300 ml-1">% 승률</span>
+                </div>
+              </div>
+              <div className="mt-3 pt-2 border-t border-slate-800 text-xs text-slate-400 flex items-center justify-between">
+                <span>손절: 종목별 변동성(ATR) 기반</span>
+                <span className="text-emerald-400 font-bold">안전 작동 중</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
       {/* MAIN CONTENT */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 space-y-6">
+          {isIndexTrend && (
+            <TrendStatusPanel
+              symbol={TREND_SYMBOL}
+              name={TREND_NAME}
+              isHolding={portfolio.positions.some((p) => p.symbol === TREND_SYMBOL)}
+              initialCapital={portfolio.initialCapital}
+              currentValuation={portfolio.currentValuation}
+              // Buy-and-hold is measured from the session's very first entry,
+              // so later round trips don't move the yardstick.
+              firstEntryPriceKrw={
+                [...tradeOrders].reverse().find((o) => o.type === 'BUY' && o.symbol === TREND_SYMBOL)?.price ?? null
+              }
+            />
+          )}
+
           <div>
             <h4 className="text-lg font-extrabold text-slate-900 mb-3">보유 종목</h4>
             <HoldingsPanel positions={portfolio.positions} onSellPosition={handleSellPosition} isSelling={sellingSymbol} />
