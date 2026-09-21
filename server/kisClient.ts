@@ -9,6 +9,7 @@
 // real-money host is reachable only when KIS_ENV is explicitly "real" — a
 // missing or misspelled value lands on the paper host, never on live money.
 
+import { getStore } from '@netlify/blobs';
 import type { Market } from '../src/types';
 
 const PAPER_HOST = 'https://openapivts.koreainvestment.com:29443';
@@ -25,7 +26,10 @@ const TR_ID = {
   real: { buy: 'TTTC0802U', sell: 'TTTC0801U', balance: 'TTTC8434R' },
 } as const;
 
-const REQUEST_TIMEOUT_MS = 10_000;
+// The paper host answers in 1-6 seconds depending on load, so a 10s ceiling
+// was tripping on ordinary slowness. Still bounded, because the scheduled
+// function has its own budget to finish inside.
+const REQUEST_TIMEOUT_MS = 15_000;
 // KIS throttles token issuance, and a token lasts a day. Re-use it and renew a
 // little early rather than asking per request.
 const TOKEN_RENEW_MARGIN_MS = 60 * 60 * 1000;
@@ -82,34 +86,86 @@ function hostFor(env: KisEnvironment): string {
 
 // --- access token -----------------------------------------------------------
 
-let cachedToken: { value: string; expiresAt: number; env: KisEnvironment } | null = null;
+// KIS issues roughly one token per minute and each one lasts a day. A scheduled
+// function gets a fresh process on a cold start, so an in-memory cache alone
+// would ask for a new token every few minutes and be rate-limited into failing.
+// Persisting it makes every invocation share the same daily token.
+const TOKEN_STORE = 'kis-auth';
+const TOKEN_KEY = 'access-token';
+
+interface StoredToken {
+  value: string;
+  expiresAt: number;
+  env: KisEnvironment;
+}
+
+let cachedToken: StoredToken | null = null;
+
+async function readStoredToken(): Promise<StoredToken | null> {
+  try {
+    return await getStore(TOKEN_STORE, { consistency: 'strong' }).get(TOKEN_KEY, { type: 'json' });
+  } catch {
+    // Blobs is unavailable outside the Netlify runtime (plain scripts, tests).
+    // Falling back to the in-memory cache is correct there.
+    return null;
+  }
+}
+
+async function writeStoredToken(token: StoredToken): Promise<void> {
+  try {
+    await getStore(TOKEN_STORE, { consistency: 'strong' }).setJSON(TOKEN_KEY, token);
+  } catch {
+    /* memory-only fallback; see readStoredToken */
+  }
+}
+
+function isUsable(token: StoredToken | null, env: KisEnvironment, now: number, marginMs: number): boolean {
+  return !!token && token.env === env && token.expiresAt - marginMs > now;
+}
 
 async function getAccessToken(config: KisConfig): Promise<string> {
   const now = Date.now();
-  if (cachedToken && cachedToken.env === config.environment && cachedToken.expiresAt - TOKEN_RENEW_MARGIN_MS > now) {
-    return cachedToken.value;
+  if (isUsable(cachedToken, config.environment, now, TOKEN_RENEW_MARGIN_MS)) return cachedToken!.value;
+
+  const stored = await readStoredToken();
+  if (isUsable(stored, config.environment, now, TOKEN_RENEW_MARGIN_MS)) {
+    cachedToken = stored;
+    return stored!.value;
   }
 
-  const res = await fetch(`${hostFor(config.environment)}${TOKEN_PATH}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      grant_type: 'client_credentials',
-      appkey: config.appKey,
-      appsecret: config.appSecret,
-    }),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${hostFor(config.environment)}${TOKEN_PATH}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        grant_type: 'client_credentials',
+        appkey: config.appKey,
+        appsecret: config.appSecret,
+      }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    // Network failure while renewing: an existing token that has not actually
+    // expired is better than no token at all.
+    if (isUsable(stored, config.environment, now, 0)) return stored!.value;
+    throw err;
+  }
 
   if (!res.ok) {
+    // Most often this is KIS's own issuance rate limit. Renewal starts an hour
+    // before expiry precisely so a refusal here still leaves a working token.
+    if (isUsable(stored, config.environment, now, 0)) return stored!.value;
     // Deliberately does not echo the body: it can contain the app key.
-    throw new Error(`KIS 토큰 발급 실패 (HTTP ${res.status})`);
+    throw new Error(`KIS 토큰 발급 실패 (HTTP ${res.status}) — 잠시 후 다시 시도됩니다.`);
   }
+
   const body: any = await res.json();
   if (!body?.access_token) throw new Error('KIS 토큰 응답에 access_token이 없습니다.');
 
   const lifetimeMs = (Number(body.expires_in) || 86_400) * 1000;
   cachedToken = { value: body.access_token, expiresAt: now + lifetimeMs, env: config.environment };
+  await writeStoredToken(cachedToken);
   return cachedToken.value;
 }
 
