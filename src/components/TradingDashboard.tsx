@@ -35,11 +35,12 @@ interface TradingDashboardProps {
 // session blob (no external API calls), so it's cheap to poll often.
 const POLL_INTERVAL_MS = 5000;
 
-// The index-trend strategy holds exactly one thing; keep its identity here so
-// the panel and the holdings check can't drift apart. Mirrors
-// server/data/trendUniverse.ts.
-const TREND_SYMBOL = 'SPY';
-const TREND_NAME = 'S&P 500 지수';
+// The index-trend strategy watches one ticker and holds a different one: the
+// signal needs SPY's long history, the order goes to a KRX-listed tracker.
+// Mirrors server/data/trendUniverse.ts.
+const TREND_SIGNAL_SYMBOL = 'SPY';
+const TREND_TRADE_SYMBOL = '379800';
+const TREND_NAME = 'KODEX 미국S&P500';
 
 async function fetchSessionState(): Promise<{ active: boolean; session?: TradingSession }> {
   const res = await fetch('/api/session/state');
@@ -413,15 +414,17 @@ export const TradingDashboard: React.FC<TradingDashboardProps> = ({
         <div className="lg:col-span-2 space-y-6">
           {isIndexTrend && (
             <TrendStatusPanel
-              symbol={TREND_SYMBOL}
+              signalSymbol={TREND_SIGNAL_SYMBOL}
+              tradeSymbol={TREND_TRADE_SYMBOL}
               name={TREND_NAME}
-              isHolding={portfolio.positions.some((p) => p.symbol === TREND_SYMBOL)}
+              isHolding={portfolio.positions.some((p) => p.symbol === TREND_TRADE_SYMBOL)}
               initialCapital={portfolio.initialCapital}
               currentValuation={portfolio.currentValuation}
               // Buy-and-hold is measured from the session's very first entry,
               // so later round trips don't move the yardstick.
               firstEntryPriceKrw={
-                [...tradeOrders].reverse().find((o) => o.type === 'BUY' && o.symbol === TREND_SYMBOL)?.price ?? null
+                [...tradeOrders].reverse().find((o) => o.type === 'BUY' && o.symbol === TREND_TRADE_SYMBOL)?.price ??
+                null
               }
             />
           )}

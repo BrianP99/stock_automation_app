@@ -3,10 +3,13 @@ import { TrendingUp, TrendingDown, AlertTriangle } from 'lucide-react';
 import { StockAnalysisResponse } from '../types';
 
 interface TrendStatusPanelProps {
-  symbol: string;
+  /** Ticker the 200-day signal is measured on (SPY — it has the long history). */
+  signalSymbol: string;
+  /** Ticker actually held (a KRX-listed tracker). Priced separately: the two move differently. */
+  tradeSymbol: string;
   name: string;
   isHolding: boolean;
-  /** Capital the session started with, and the index price at that moment — together they give the "what if I'd just held it" line. */
+  /** Capital the session started with, and the entry price — together they give the "what if I'd just held it" line. */
   initialCapital: number;
   firstEntryPriceKrw: number | null;
   currentValuation: number;
@@ -23,7 +26,8 @@ const POLL_INTERVAL_MS = 60_000; // the decision only moves once a day; a minute
  * the only trace of the strategy on screen is one line of watchlist text.
  */
 export const TrendStatusPanel: React.FC<TrendStatusPanelProps> = ({
-  symbol,
+  signalSymbol,
+  tradeSymbol,
   name,
   isHolding,
   initialCapital,
@@ -31,16 +35,24 @@ export const TrendStatusPanel: React.FC<TrendStatusPanelProps> = ({
   currentValuation,
 }) => {
   const [analysis, setAnalysis] = useState<StockAnalysisResponse | null>(null);
+  const [instrument, setInstrument] = useState<StockAnalysisResponse | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     const load = () => {
-      fetch(`/api/stock/analysis?symbol=${encodeURIComponent(symbol)}`)
-        .then((res) => (res.ok ? res.json() : Promise.reject(new Error('실패'))))
-        .then((data) => {
+      // Two tickers: the signal decides, the instrument is what we own. Pricing
+      // the holding off the signal's price would quietly report a wrong return.
+      Promise.all([
+        fetch(`/api/stock/analysis?symbol=${encodeURIComponent(signalSymbol)}`).then((r) =>
+          r.ok ? r.json() : Promise.reject(new Error('실패'))
+        ),
+        fetch(`/api/stock/analysis?symbol=${encodeURIComponent(tradeSymbol)}`).then((r) => (r.ok ? r.json() : null)),
+      ])
+        .then(([signal, traded]) => {
           if (cancelled) return;
-          setAnalysis(data);
+          setAnalysis(signal);
+          setInstrument(traded);
           setFailed(false);
         })
         .catch(() => !cancelled && setFailed(true));
@@ -51,7 +63,7 @@ export const TrendStatusPanel: React.FC<TrendStatusPanelProps> = ({
       cancelled = true;
       clearInterval(timer);
     };
-  }, [symbol]);
+  }, [signalSymbol, tradeSymbol]);
 
   const close = analysis?.trendCloseKrw ?? null;
   const line = analysis?.trendSma200Krw ?? null;
@@ -68,7 +80,7 @@ export const TrendStatusPanel: React.FC<TrendStatusPanelProps> = ({
         <div>
           <h4 className="text-base font-bold text-slate-900">추세 상태</h4>
           <p className="text-xs text-slate-500 mt-0.5">
-            {name} 종가가 200일 추세선 위면 보유, 아래면 전량 국채로 대피합니다
+            S&amp;P 500 지수가 200일 추세선 위면 {name}을(를) 보유, 아래면 전량 국채로 대피합니다
           </p>
         </div>
         {gapPercent != null && (
@@ -157,9 +169,9 @@ export const TrendStatusPanel: React.FC<TrendStatusPanelProps> = ({
           {/* The point of this strategy is not to beat the index but to fall
               less when it breaks, so the honest yardstick is "what if I had
               just held it". Lagging here during a rally is expected. */}
-          {firstEntryPriceKrw && analysis?.price ? (
+          {firstEntryPriceKrw && instrument?.price ? (
             (() => {
-              const heldValue = initialCapital * (analysis.price / firstEntryPriceKrw);
+              const heldValue = initialCapital * (instrument.price / firstEntryPriceKrw);
               const strategyPct = (currentValuation / initialCapital - 1) * 100;
               const heldPct = (heldValue / initialCapital - 1) * 100;
               const diff = strategyPct - heldPct;

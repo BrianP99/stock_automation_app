@@ -14,6 +14,7 @@ import {
 import { getCurrentSession, saveCurrentSession, type StoredSession } from '../../server/sessionStore';
 import { TRADING_UNIVERSE } from '../../server/data/curatedUniverse';
 import { TREND_UNIVERSE } from '../../server/data/trendUniverse';
+import { executeOrders, verifyAgainstBroker } from '../../server/brokerExecution';
 import { notifyDiscordTrades, notifyDiscordSummary } from '../../server/discord';
 import type { PortfolioState, StrategyMode, WatchlistCandidate } from '../../src/types';
 
@@ -36,6 +37,23 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T)
   }
   await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
   return results;
+}
+
+/** Pushes an alert to Discord and records the attempt in the session's log. */
+async function notifyAndLog(session: StoredSession, title: string, detail: string): Promise<void> {
+  const result = await notifyDiscordSummary(session.portfolio, [], title);
+  session.notificationLog = [
+    {
+      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      timestamp: new Date().toISOString(),
+      kind: 'summary' as const,
+      title,
+      detail,
+      ok: result.ok,
+      ...(result.ok ? {} : { error: result.error || `HTTP ${result.status}` }),
+    },
+    ...(session.notificationLog || []),
+  ];
 }
 
 /**
@@ -61,41 +79,41 @@ async function applyDailyLossLimit(session: StoredSession, isNewDay: boolean): P
   session.latestAiMessage =
     `일일 손실 한도 ${check.limitPercent}%를 넘어서(오늘 ${check.lossPercent}%) 자동매매를 멈췄습니다. ` +
     '내용을 확인한 뒤 직접 재개해주세요.';
-  const notifyResult = await notifyDiscordSummary(session.portfolio, [], '🛑 일일 손실 한도 도달 — 자동매매 정지');
-  session.notificationLog = [
-    {
-      id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      timestamp: new Date().toISOString(),
-      kind: 'summary' as const,
-      title: '일일 손실 한도 도달 — 자동매매 정지',
-      detail: `오늘 ${check.lossPercent}% 하락 (한도 ${check.limitPercent}%)`,
-      ok: notifyResult.ok,
-      ...(notifyResult.ok ? {} : { error: notifyResult.error || `HTTP ${notifyResult.status}` }),
-    },
-    ...(session.notificationLog || []),
-  ];
+  await notifyAndLog(
+    session,
+    '🛑 일일 손실 한도 도달 — 자동매매 정지',
+    `오늘 ${check.lossPercent}% 하락 (한도 ${check.limitPercent}%)`
+  );
 }
 
 /** Runs the index-trend strategy: no screening, just the trend universe's own trend lines. */
 async function runIndexTrendTick(resetPortfolio: PortfolioState, cashSweepQuote: CashSweepQuote | null, now: string) {
+  // The signal and the instrument are two different tickers: the 200-day trend
+  // is measured on SPY, which has the history the strategy was validated on,
+  // while the order goes to a KRX-listed tracker that paper trading supports
+  // and that carries no currency leg of its own.
   const inputs = (
     await mapWithConcurrency(TREND_UNIVERSE, 4, async (u) => {
       try {
-        const a = await getStockAnalysis(u.symbol);
+        const [signal, instrument] = await Promise.all([
+          getStockAnalysis(u.signalSymbol),
+          getStockAnalysis(u.tradeSymbol),
+        ]);
         return {
-          symbol: u.symbol,
+          symbol: u.tradeSymbol,
           name: u.name,
           market: u.market,
-          exchange: a.exchange,
+          exchange: instrument.exchange,
           sector: u.sector,
           description: u.description,
-          currency: a.currency,
-          priceKrw: a.price,
-          priceNative: a.nativePrice,
-          atrKrw: a.atrKrw,
-          // Decide on the settled daily close, fill at the live price.
-          decisionCloseKrw: a.trendCloseKrw,
-          sma200Krw: a.trendSma200Krw,
+          currency: instrument.currency,
+          // Fill at the instrument's live price...
+          priceKrw: instrument.price,
+          priceNative: instrument.nativePrice,
+          atrKrw: instrument.atrKrw,
+          // ...but decide on the signal ticker's settled daily close.
+          decisionCloseKrw: signal.trendCloseKrw,
+          sma200Krw: signal.trendSma200Krw,
         } as TrendTickInput;
       } catch {
         return null;
@@ -147,11 +165,34 @@ export default async () => {
       const now = new Date().toISOString();
       const { portfolio: resetPortfolio, date } = resetDailyCountersIfNewDay(session.portfolio, session.lastTradeDate);
       const isNewDay = date !== session.lastTradeDate;
+
+      // Check our book against the broker's BEFORE deciding anything. Trading
+      // on a stale picture is how one bad fill becomes a series of them.
+      const verification = await verifyAgainstBroker(
+        resetPortfolio.positions.map((p) => ({ symbol: p.symbol, quantity: p.quantity })),
+        session.brokerOrders?.[0]?.timestamp ?? null
+      );
+      if (!verification.ok) {
+        session.isPaused = true;
+        session.lastTickAt = now;
+        session.latestAiMessage = `${verification.message} 자동매매를 멈췄습니다. 확인 후 직접 재개해주세요.`;
+        await notifyAndLog(session, '🛑 증권사 잔고 불일치 — 자동매매 정지', verification.message);
+        await saveCurrentSession(session);
+        return;
+      }
+
       const cashSweepQuote: CashSweepQuote | null = await getStockAnalysis(CASH_SWEEP_SYMBOL)
         .then((a) => ({ priceNative: a.nativePrice, priceKrw: a.price }))
         .catch(() => null);
 
       const { result, watchlist } = await runIndexTrendTick(resetPortfolio, cashSweepQuote, now);
+
+      // Send the decisions to the broker (a no-op while unconnected). Any
+      // failure halts: the portfolio above already assumes these went through.
+      const execution = await executeOrders(result.orders);
+      if (execution.records.length) {
+        session.brokerOrders = [...execution.records, ...(session.brokerOrders || [])];
+      }
       session.portfolio = result.portfolio;
       session.watchlist = watchlist;
       session.lastTradeDate = date;
@@ -179,6 +220,14 @@ export default async () => {
         session.latestAiMessage = holding
           ? '지수가 200일 추세선 위에 있어 그대로 보유 중입니다.'
           : '지수가 200일 추세선 아래에 있어 현금(단기국채)으로 대기 중입니다.';
+      }
+
+      // A broker failure means the portfolio recorded above no longer matches
+      // the account. Stop before the next tick can compound it.
+      if (execution.halt) {
+        session.isPaused = true;
+        session.latestAiMessage = execution.halt;
+        await notifyAndLog(session, '🛑 증권사 주문 실패 — 자동매매 정지', execution.halt);
       }
 
       await applyDailyLossLimit(session, isNewDay);
