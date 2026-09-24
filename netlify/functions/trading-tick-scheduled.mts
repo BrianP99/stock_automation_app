@@ -30,6 +30,15 @@ import type { PortfolioState, StrategyMode, WatchlistCandidate } from '../../src
 // singleton session blob.
 
 const CANDIDATE_CONFIDENCE_THRESHOLD = 65;
+
+/**
+ * How many consecutive ticks may fail to reach the broker before trading stops.
+ * One HTTP 500 from KIS once halted the system for two days, which is a far
+ * worse outcome than waiting three ticks: an unreachable API says nothing about
+ * whether our book is right. At a five-minute schedule this rides out roughly
+ * fifteen minutes of trouble and still reacts quickly to a genuine outage.
+ */
+const MAX_BROKER_CHECK_FAILURES = 3;
 const MAX_CANDIDATES_TO_CONFIRM = 20; // bound how many get the heavier full-analysis call
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -206,7 +215,27 @@ export default async () => {
           : []),
       ];
       const verification = await verifyAgainstBroker(ourHoldings, session.brokerOrders?.[0]?.timestamp ?? null);
+
+      if (verification.unavailable) {
+        // Could not reach the broker. That is not evidence our book is wrong,
+        // so hold off this tick and try the next one; only a run of failures
+        // means something a person needs to look at.
+        const failures = (session.brokerCheckFailures ?? 0) + 1;
+        session.brokerCheckFailures = failures;
+        session.lastTickAt = now;
+        if (failures >= MAX_BROKER_CHECK_FAILURES) {
+          session.isPaused = true;
+          session.latestAiMessage = `${verification.message} ${failures}회 연속 실패해 자동매매를 멈췄습니다. 확인 후 직접 재개해주세요.`;
+          await notifyAndLog(session, '🛑 증권사 연결 불가 — 자동매매 정지', verification.message);
+        } else {
+          session.latestAiMessage = `증권사 잔고를 확인하지 못해 이번 회차는 건너뜁니다. 잠시 후 다시 시도합니다. (${failures}/${MAX_BROKER_CHECK_FAILURES})`;
+        }
+        await saveCurrentSession(session);
+        return;
+      }
+
       if (!verification.ok) {
+        // The broker answered and disagrees with us — the book really is wrong.
         session.isPaused = true;
         session.lastTickAt = now;
         session.latestAiMessage = `${verification.message} 자동매매를 멈췄습니다. 확인 후 직접 재개해주세요.`;
@@ -214,6 +243,8 @@ export default async () => {
         await saveCurrentSession(session);
         return;
       }
+
+      session.brokerCheckFailures = 0;
 
       const cashSweepQuote: CashSweepQuote | null = await getStockAnalysis(CASH_SWEEP_SYMBOL)
         .then((a) => ({ priceNative: a.nativePrice, priceKrw: a.price }))

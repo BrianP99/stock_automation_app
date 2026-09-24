@@ -214,4 +214,6 @@ export interface TradingSession {
   dayStartValuation?: number;
   /** Every request sent to the broker, newest first. Empty while running on paper. */
   brokerOrders?: BrokerOrderRecord[];
+  /** Consecutive ticks where the broker could not be reached to reconcile. Reset on any successful check. */
+  brokerCheckFailures?: number;
 }

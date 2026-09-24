@@ -161,6 +161,13 @@ export interface BrokerVerification {
   ok: boolean;
   /** True when the check was deliberately skipped (no broker, or a fill still settling). */
   skipped: boolean;
+  /**
+   * True when the broker could not be reached at all, as opposed to answering
+   * with holdings that disagree with ours. The two need different responses: a
+   * confirmed mismatch means our book is wrong and trading must stop, while an
+   * unreachable API means we simply do not know yet and should try again.
+   */
+  unavailable: boolean;
   message: string;
   /** The broker's own holdings when the check actually ran — the reference for correcting our recorded prices. */
   brokerPositions?: KisPosition[];
@@ -178,26 +185,35 @@ export async function verifyAgainstBroker(
   ourPositions: { symbol: string; quantity: number }[],
   lastBrokerOrderAt: string | null
 ): Promise<BrokerVerification> {
-  if (!isBrokerConnected()) return { ok: true, skipped: true, message: '증권사 미연결 (페이퍼 모드)' };
+  if (!isBrokerConnected()) {
+    return { ok: true, skipped: true, unavailable: false, message: '증권사 미연결 (페이퍼 모드)' };
+  }
 
   if (lastBrokerOrderAt) {
     const age = Date.now() - new Date(lastBrokerOrderAt).getTime();
     if (age >= 0 && age < RECONCILE_GRACE_MS) {
-      return { ok: true, skipped: true, message: '최근 주문 체결 대기 중이라 대조를 건너뜁니다.' };
+      return { ok: true, skipped: true, unavailable: false, message: '최근 주문 체결 대기 중이라 대조를 건너뜁니다.' };
     }
   }
 
   try {
     const balance = await fetchBalance();
-    if (!balance) return { ok: true, skipped: true, message: '증권사 미연결 (페이퍼 모드)' };
+    if (!balance) return { ok: true, skipped: true, unavailable: false, message: '증권사 미연결 (페이퍼 모드)' };
     const result = reconcilePositions(ourPositions, balance.positions);
-    return { ok: result.ok, skipped: false, message: result.message, brokerPositions: balance.positions };
+    return {
+      ok: result.ok,
+      skipped: false,
+      unavailable: false,
+      message: result.message,
+      brokerPositions: balance.positions,
+    };
   } catch (err) {
-    // A failed check is not a passed check: if we cannot confirm the broker's
-    // view, we should not trade against a possibly-stale one.
+    // Unreachable, not wrong. Still not safe to trade on — the caller holds off
+    // — but a single blip must not be treated as evidence the book is broken.
     return {
       ok: false,
       skipped: false,
+      unavailable: true,
       message: `증권사 잔고를 조회하지 못해 대조할 수 없습니다: ${err instanceof Error ? err.message : String(err)}`,
     };
   }
