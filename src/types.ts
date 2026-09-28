@@ -214,6 +214,13 @@ export interface TradingSession {
   dayStartValuation?: number;
   /** Every request sent to the broker, newest first. Empty while running on paper. */
   brokerOrders?: BrokerOrderRecord[];
-  /** Consecutive ticks where the broker could not be reached to reconcile. Reset on any successful check. */
+  /** Consecutive ticks where the broker could not be reached to reconcile. Reset on any successful check, on resume, and once the streak goes stale. */
   brokerCheckFailures?: number;
+  /**
+   * When the most recent such failure happened. "Consecutive" has to mean
+   * consecutive in time: the market-hours guard returns before reconciliation,
+   * so without this a streak begun on Friday afternoon survived the weekend and
+   * pushed Monday's first blip straight over the limit.
+   */
+  brokerCheckFailureAt?: string;
 }

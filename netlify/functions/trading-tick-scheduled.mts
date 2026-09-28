@@ -39,6 +39,14 @@ const CANDIDATE_CONFIDENCE_THRESHOLD = 65;
  * fifteen minutes of trouble and still reacts quickly to a genuine outage.
  */
 const MAX_BROKER_CHECK_FAILURES = 3;
+
+/**
+ * How long a failure stays part of the current streak. Reconciliation only runs
+ * while KRX is open, so consecutive ticks are not consecutive in wall-clock
+ * time: a failure late on Friday would otherwise still be counted on Monday.
+ * Past this gap the count starts over.
+ */
+const BROKER_CHECK_STREAK_TTL_MS = 30 * 60 * 1000;
 const MAX_CANDIDATES_TO_CONFIRM = 20; // bound how many get the heavier full-analysis call
 
 async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -220,8 +228,12 @@ export default async () => {
         // Could not reach the broker. That is not evidence our book is wrong,
         // so hold off this tick and try the next one; only a run of failures
         // means something a person needs to look at.
-        const failures = (session.brokerCheckFailures ?? 0) + 1;
+        const previousAt = session.brokerCheckFailureAt;
+        const streakIsStale =
+          !previousAt || Date.now() - new Date(previousAt).getTime() > BROKER_CHECK_STREAK_TTL_MS;
+        const failures = streakIsStale ? 1 : (session.brokerCheckFailures ?? 0) + 1;
         session.brokerCheckFailures = failures;
+        session.brokerCheckFailureAt = now;
         session.lastTickAt = now;
         if (failures >= MAX_BROKER_CHECK_FAILURES) {
           session.isPaused = true;
@@ -245,6 +257,7 @@ export default async () => {
       }
 
       session.brokerCheckFailures = 0;
+      session.brokerCheckFailureAt = undefined;
 
       const cashSweepQuote: CashSweepQuote | null = await getStockAnalysis(CASH_SWEEP_SYMBOL)
         .then((a) => ({ priceNative: a.nativePrice, priceKrw: a.price }))

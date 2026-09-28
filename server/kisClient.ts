@@ -30,6 +30,21 @@ const TR_ID = {
 // was tripping on ordinary slowness. Still bounded, because the scheduled
 // function has its own budget to finish inside.
 const REQUEST_TIMEOUT_MS = 15_000;
+
+/**
+ * How many times a balance inquiry is retried within one tick, and the base
+ * gap between tries. Three quick tries absorb the transient slowness that
+ * previously cost an entire tick; the gap grows so a struggling host is not
+ * hammered.
+ */
+const BALANCE_RETRY_ATTEMPTS = 3;
+const BALANCE_RETRY_DELAY_MS = 800;
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Marks an error as the broker's answer rather than a failure to reach it — never retried. */
+class BrokerRefusal extends Error {}
+
 // KIS throttles token issuance, and a token lasts a day. Re-use it and renew a
 // little early rather than asking per request.
 const TOKEN_RENEW_MARGIN_MS = 60 * 60 * 1000;
@@ -297,6 +312,52 @@ export interface KisBalance {
   totalEvalKrw: number;
 }
 
+/**
+ * Asks for the balance, retrying a request that never got an answer.
+ *
+ * Safe to retry precisely because it only reads: an order sent twice buys
+ * twice, which is why placeOrder must never do this, but asking the same
+ * question again costs nothing. A single slow response used to burn an entire
+ * five-minute tick, and three such ticks stopped trading outright.
+ *
+ * A refusal is different from silence — the broker did answer, and asking again
+ * would only be refused again, so it is raised on the spot.
+ */
+async function requestBalanceWithRetry(
+  config: KisConfig,
+  token: string,
+  params: URLSearchParams
+): Promise<any> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= BALANCE_RETRY_ATTEMPTS; attempt++) {
+    try {
+      const res = await fetch(`${hostFor(config.environment)}${BALANCE_PATH}?${params}`, {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          authorization: `Bearer ${token}`,
+          appkey: config.appKey,
+          appsecret: config.appSecret,
+          tr_id: TR_ID[config.environment].balance,
+          custtype: 'P',
+        },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error(`잔고 조회 실패 (HTTP ${res.status})`);
+
+      const parsed: any = await res.json();
+      if (parsed?.rt_cd !== '0') throw new BrokerRefusal(parsed?.msg1 || '잔고 조회가 거부되었습니다.');
+      return parsed;
+    } catch (err) {
+      if (err instanceof BrokerRefusal) throw new Error(err.message);
+      lastError = err;
+      if (attempt < BALANCE_RETRY_ATTEMPTS) await delay(BALANCE_RETRY_DELAY_MS * attempt);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 /** Reads the broker's own view of the account — the truth our state is checked against. */
 export async function fetchBalance(): Promise<KisBalance | null> {
   const config = getKisConfig();
@@ -317,21 +378,7 @@ export async function fetchBalance(): Promise<KisBalance | null> {
     CTX_AREA_NK100: '',
   });
 
-  const res = await fetch(`${hostFor(config.environment)}${BALANCE_PATH}?${params}`, {
-    headers: {
-      'Content-Type': 'application/json; charset=utf-8',
-      authorization: `Bearer ${token}`,
-      appkey: config.appKey,
-      appsecret: config.appSecret,
-      tr_id: TR_ID[config.environment].balance,
-      custtype: 'P',
-    },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  });
-
-  if (!res.ok) throw new Error(`잔고 조회 실패 (HTTP ${res.status})`);
-  const body: any = await res.json();
-  if (body?.rt_cd !== '0') throw new Error(body?.msg1 || '잔고 조회가 거부되었습니다.');
+  const body = await requestBalanceWithRetry(config, token, params);
 
   const holdings: any[] = Array.isArray(body.output1) ? body.output1 : [];
   const summary: any = Array.isArray(body.output2) ? body.output2[0] || {} : body.output2 || {};

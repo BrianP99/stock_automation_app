@@ -28,6 +28,11 @@ export default async (req: Request) => {
 
   if (action === 'resume') {
     session.isPaused = false;
+    // A person has looked, so the old failure streak is spent. Leaving it at
+    // the limit meant the next single blip re-paused immediately, which made
+    // the allowance worthless exactly when it was needed.
+    session.brokerCheckFailures = 0;
+    session.brokerCheckFailureAt = undefined;
     await saveCurrentSession(session);
     return new Response(JSON.stringify(session), { headers: { 'Content-Type': 'application/json' } });
   }
