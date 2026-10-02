@@ -28,23 +28,104 @@ export function isBrokerConnected(): boolean {
 }
 
 /**
- * Whether KRX is currently trading (09:00-15:30 KST, weekdays).
+ * KRX market holidays, by KST date.
+ *
+ * Deliberately a table rather than a lookup against the broker's holiday API.
+ * "Is the market open" sits on the critical path of every tick, and a network
+ * call there would need its own answer to "what if it does not respond" — which
+ * is the exact failure class that halted this system twice. A table cannot time
+ * out. The cost is that it has to be extended each year, which is why running
+ * past its coverage says so out loud instead of quietly assuming a trading day.
+ *
+ * Lunar holidays move, substitute holidays depend on which weekday the date
+ * falls on, and the exchange adds closures of its own (election day, the last
+ * session of the year), so these come from the exchange's published calendar
+ * rather than from a rule.
+ */
+const KRX_HOLIDAYS = new Map<string, string>([
+  ['2026-01-01', '신정'],
+  ['2026-02-16', '설날 연휴'],
+  ['2026-02-17', '설날'],
+  ['2026-02-18', '설날 연휴'],
+  ['2026-03-02', '삼일절 대체공휴일'],
+  ['2026-05-01', '근로자의 날'],
+  ['2026-05-05', '어린이날'],
+  ['2026-05-25', '부처님오신날 대체공휴일'],
+  ['2026-06-03', '전국동시지방선거'],
+  ['2026-07-17', '제헌절'],
+  ['2026-08-17', '광복절 대체공휴일'],
+  ['2026-09-24', '추석 연휴'],
+  ['2026-09-25', '추석'],
+  ['2026-10-05', '개천절 대체공휴일'],
+  ['2026-10-09', '한글날'],
+  ['2026-12-25', '성탄절'],
+  ['2026-12-31', '연말 휴장'],
+]);
+
+/**
+ * The last KST date the table above actually covers. Past this the calendar is
+ * silent, not empty — so the honest reading is "unknown", surfaced to the
+ * dashboard. Trading continues, because assuming a closed market would skip
+ * real sessions, which is the worse mistake; an order on an unlisted holiday is
+ * still rejected and still pauses, exactly as before this table existed.
+ */
+const KRX_HOLIDAY_CALENDAR_THROUGH = '2026-12-31';
+
+const MARKET_OPEN_MINUTE = 9 * 60;
+const MARKET_CLOSE_MINUTE = 15 * 60 + 30;
+
+/** KST is a fixed offset with no daylight saving, so shifting the clock is enough. */
+function kstParts(now: Date): { date: string; weekday: number; minutesIntoDay: number } {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return {
+    date: kst.toISOString().slice(0, 10),
+    weekday: kst.getUTCDay(),
+    minutesIntoDay: kst.getUTCHours() * 60 + kst.getUTCMinutes(),
+  };
+}
+
+export interface KrxMarketStatus {
+  open: boolean;
+  /** Null while open. Otherwise why, so the dashboard can say something true. */
+  closedReason: 'weekend' | 'holiday' | 'outside-hours' | null;
+  /** Set when closedReason is 'holiday'. */
+  holidayName?: string;
+  /** True once the date is past what KRX_HOLIDAYS covers — the table needs extending. */
+  calendarStale: boolean;
+}
+
+/**
+ * Whether KRX is trading right now (09:00-15:30 KST, weekdays, excluding the
+ * holidays above).
  *
  * The scheduled tick runs around the clock, but orders only reach an open
  * exchange. Without this the worst case is precise: SPY closes below its trend
  * line at roughly 05:00 KST, the next tick tries to sell into a shut market,
  * the rejection trips the halt, and the system is still paused when KRX opens
  * four hours later — failing at exactly the moment the strategy exists for.
- *
- * Public holidays are NOT known here. An order on one would be rejected and
- * pause trading, which is safe but needs a manual resume.
  */
+export function krxMarketStatus(now: Date = new Date()): KrxMarketStatus {
+  const { date, weekday, minutesIntoDay } = kstParts(now);
+  const calendarStale = date > KRX_HOLIDAY_CALENDAR_THROUGH;
+
+  if (weekday === 0 || weekday === 6) {
+    return { open: false, closedReason: 'weekend', calendarStale };
+  }
+
+  const holidayName = KRX_HOLIDAYS.get(date);
+  if (holidayName) {
+    return { open: false, closedReason: 'holiday', holidayName, calendarStale };
+  }
+
+  if (minutesIntoDay < MARKET_OPEN_MINUTE || minutesIntoDay > MARKET_CLOSE_MINUTE) {
+    return { open: false, closedReason: 'outside-hours', calendarStale };
+  }
+
+  return { open: true, closedReason: null, calendarStale };
+}
+
 export function isKrxOpen(now: Date = new Date()): boolean {
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  const weekday = kst.getUTCDay();
-  if (weekday === 0 || weekday === 6) return false;
-  const minutesIntoDay = kst.getUTCHours() * 60 + kst.getUTCMinutes();
-  return minutesIntoDay >= 9 * 60 && minutesIntoDay <= 15 * 60 + 30;
+  return krxMarketStatus(now).open;
 }
 
 /** Which account the orders would go to — surfaced so the UI can never hide that it is real. */
