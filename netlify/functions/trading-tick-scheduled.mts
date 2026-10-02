@@ -19,7 +19,7 @@ import {
   verifyAgainstBroker,
   syncCostBasisFromBroker,
   isBrokerConnected,
-  isKrxOpen,
+  krxMarketStatus,
 } from '../../server/brokerExecution';
 import { notifyDiscordTrades, notifyDiscordSummary } from '../../server/discord';
 import type { PortfolioState, StrategyMode, WatchlistCandidate } from '../../src/types';
@@ -205,13 +205,24 @@ export default async () => {
       // update the book and then fail to place the trade, so skip the whole
       // decision until it opens; the signal is drawn from daily closes and will
       // still be there.
-      if (isBrokerConnected() && !isKrxOpen()) {
+      const market = krxMarketStatus();
+      if (isBrokerConnected() && !market.open) {
         session.lastTickAt = now;
         session.lastError = null;
-        session.latestAiMessage = '한국 증시가 열려 있지 않아 대기 중입니다. 장 시작 후 판단합니다.';
+        session.latestAiMessage =
+          market.closedReason === 'holiday'
+            ? `${market.holidayName} 휴장일이라 거래하지 않습니다. 다음 거래일에 판단합니다.`
+            : '한국 증시가 열려 있지 않아 대기 중입니다. 장 시작 후 판단합니다.';
         await saveCurrentSession(session);
         return;
       }
+
+      // Past the calendar's coverage the system cannot tell a holiday from a
+      // trading day, so it keeps trading and says so — skipping real sessions
+      // would be the worse error, but doing it silently would be worse still.
+      const calendarWarning = market.calendarStale
+        ? ' ⚠️ 휴장일 달력이 만료됐습니다. 공휴일에 주문이 거부될 수 있으니 달력을 갱신해주세요.'
+        : '';
 
       // Check our book against the broker's BEFORE deciding anything. Trading
       // on a stale picture is how one bad fill becomes a series of them. The
@@ -287,7 +298,7 @@ export default async () => {
 
       if (result.orders.length) {
         session.tradeOrders = [...result.orders.reverse(), ...session.tradeOrders];
-        session.latestAiMessage = result.orders[result.orders.length - 1].reason;
+        session.latestAiMessage = result.orders[result.orders.length - 1].reason + calendarWarning;
         const notifyResults = await notifyDiscordTrades(result.orders);
         session.notificationLog = [
           ...notifyResults.map(({ order, result: r }) => ({
@@ -303,9 +314,10 @@ export default async () => {
         ];
       } else {
         const holding = session.portfolio.positions.length > 0;
-        session.latestAiMessage = holding
-          ? '지수가 200일 추세선 위에 있어 그대로 보유 중입니다.'
-          : '지수가 200일 추세선 아래에 있어 현금(단기국채)으로 대기 중입니다.';
+        session.latestAiMessage =
+          (holding
+            ? '지수가 200일 추세선 위에 있어 그대로 보유 중입니다.'
+            : '지수가 200일 추세선 아래에 있어 현금(단기국채)으로 대기 중입니다.') + calendarWarning;
       }
 
       // A broker failure means the portfolio recorded above no longer matches
