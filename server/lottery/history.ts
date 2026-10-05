@@ -49,6 +49,18 @@ async function readCached<T>(key: string): Promise<T[]> {
   }
 }
 
+/**
+ * What's already known, without asking 동행복권. For the Discord commands,
+ * which must answer within 3 seconds; the Monday job keeps the cache fresh.
+ */
+export async function loadKnownLottoDraws(): Promise<LottoDraw[]> {
+  return mergeByDraw(lottoSeed as LottoDraw[], await readCached<LottoDraw>(LOTTO_KEY));
+}
+
+export async function loadKnownPensionDraws(): Promise<PensionDraw[]> {
+  return mergeByDraw(pensionSeed as PensionDraw[], await readCached<PensionDraw>(PENSION_KEY));
+}
+
 export interface HistoryResult<T> {
   draws: T[];
   /** Set when 동행복권 couldn't be reached; the draws above are then whatever was already known. */
@@ -56,7 +68,7 @@ export interface HistoryResult<T> {
 }
 
 export async function loadLottoHistory(now = new Date()): Promise<HistoryResult<LottoDraw>> {
-  let draws = mergeByDraw(lottoSeed as LottoDraw[], await readCached<LottoDraw>(LOTTO_KEY));
+  let draws = await loadKnownLottoDraws();
   const have = new Set(draws.map((d) => d.drawNo));
   // Draws held before today (KST). Conservative by a day so a draw that's
   // scheduled but not yet announced is never asked for.
@@ -91,7 +103,7 @@ export async function loadLottoHistory(now = new Date()): Promise<HistoryResult<
 
 export async function loadPensionHistory(now = new Date()): Promise<HistoryResult<PensionDraw>> {
   const seed = pensionSeed as PensionDraw[];
-  let draws = mergeByDraw(seed, await readCached<PensionDraw>(PENSION_KEY));
+  let draws = await loadKnownPensionDraws();
   const lastHeld = upcomingDraw('pension', new Date(now.getTime() - DAY_MS)).drawNo - 1;
   if (draws.at(-1)!.drawNo >= lastHeld) return { draws, fetchError: null };
 

@@ -14,7 +14,7 @@ export default async (req: Request) => {
       const token = new URL(req.url).searchParams.get('token');
       if (!expected || token !== expected) return json({ error: 'unauthorized' }, 401);
       const { result, notify } = await runWeeklyLottery();
-      return json({ sent: notify.ok, error: notify.error, lotto: result.lotto.games, pension: result.pension.number });
+      return json({ sent: notify.ok, error: notify.error, lotto: result.lotto.games, pension: result.pension.numbers });
     }
     const result = await buildWeeklyLottery();
     return json({

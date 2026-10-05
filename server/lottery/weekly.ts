@@ -1,30 +1,13 @@
-import { getStore } from '@netlify/blobs';
 import { postToDiscord, type DiscordNotifyResult } from '../discord';
-import { generateLottoPicks, generatePensionPicks, lottoRank, pensionRanks, type LottoPicks, type PensionPicks } from './analysis';
+import { generateLottoPicks, generatePensionPicks, lottoRank, pensionRank, type LottoPicks, type PensionPicks } from './analysis';
 import { loadLottoHistory, loadPensionHistory, upcomingDraw } from './history';
+import { lottoGamesBlock, pensionAllGroupsBlock, PENSION_GROUPS, SOLD_OUT_HINT } from './format';
+import { readIssued, readWeeklyPicks, saveIssued, saveWeeklyPicks, type SavedPicks } from './picksStore';
 import type { LottoDraw, PensionDraw } from './dhlottery';
 
-const STORE_NAME = 'lottery';
 const WEBHOOK_ENV = 'LOTTERY_DISCORD_WEBHOOK_URL';
 const LOTTO_GAMES = 5; // 1,000원 × 5 = 5,000원
-const PENSION_GROUPS = [1, 2, 3, 4, 5]; // 모든조: 1,000원 × 5 = 5,000원
-
-interface SavedPicks {
-  lotto?: { drawNo: number; games: number[][] };
-  pension?: { drawNo: number; number: string };
-}
-
-function store() {
-  return getStore(STORE_NAME, { consistency: 'strong' });
-}
-
-async function readPicks(key: string): Promise<SavedPicks> {
-  try {
-    return ((await store().get(key, { type: 'json' })) as SavedPicks | null) ?? {};
-  } catch {
-    return {};
-  }
-}
+const PENSION_CANDIDATES = 3; // 모든조 1순위 (1,000원 × 5 = 5,000원) + 예비 2개
 
 export interface WeeklyLotteryResult {
   lottoDrawNo: number;
@@ -51,9 +34,16 @@ function lastWeekLines(saved: SavedPicks, lottoHistory: LottoDraw[], pensionHist
   if (saved.pension) {
     const draw = pensionHistory.find((d) => d.drawNo === saved.pension!.drawNo);
     if (draw) {
-      const wins = PENSION_GROUPS.flatMap((g) => pensionRanks(g, saved.pension!.number, draw).map((r) => `${g}조 ${r}`));
+      // Graded as bought: the first candidate for every 조. Backups or bot
+      // numbers used instead aren't known here.
+      const number = saved.pension.numbers[0];
+      const wins = PENSION_GROUPS.flatMap((g) => {
+        const rank = pensionRank(g, number, draw);
+        return rank ? [`${g}조 ${rank}`] : [];
+      });
       lines.push(
         `**연금복권 ${draw.drawNo}회** 1등 ${draw.group}조 ${draw.number} · 보너스 ${draw.bonus}\n` +
+          `추천 ${number} (모든조) → ` +
           (wins.length ? `🎉 ${wins.join(', ')} 당첨!` : '이번엔 당첨 없음'),
       );
     }
@@ -68,7 +58,7 @@ export async function buildWeeklyLottery(now = new Date()): Promise<WeeklyLotter
   const pensionTarget = upcomingDraw('pension', now);
 
   const lotto = generateLottoPicks(lottoHistory.draws, lottoTarget.drawNo, LOTTO_GAMES);
-  const pension = generatePensionPicks(pensionHistory.draws, pensionTarget.drawNo);
+  const pension = generatePensionPicks(pensionHistory.draws, pensionTarget.drawNo, PENSION_CANDIDATES);
 
   // If the history is behind, say so: the picks are still valid, but the analysis is missing recent draws.
   const warnings: string[] = [];
@@ -79,18 +69,14 @@ export async function buildWeeklyLottery(now = new Date()): Promise<WeeklyLotter
     warnings.push(`연금복권 최신 회차를 못 가져와 ${pension.stats.latestDrawNo}회까지로 분석했습니다. (${pensionHistory.fetchError ?? '데이터 없음'})`);
   }
 
-  const previous = await readPicks(`picks-${lottoTarget.drawNo - 1}`);
+  const previous = await readWeeklyPicks(lottoTarget.drawNo - 1);
   const resultLines = lastWeekLines(previous, lottoHistory.draws, pensionHistory.draws);
-
-  const gameLines = lotto.games
-    .map((g, i) => `${String.fromCharCode(65 + i)}  ${g.map((n) => String(n).padStart(2, ' ')).join('  ')}`)
-    .join('\n');
   const { stats: ls } = lotto;
 
   const embeds = [
     {
       title: `🎱 로또 6/45 제${lottoTarget.drawNo}회 (${lottoTarget.date} 토 추첨)`,
-      description: `5게임 · 5,000원\n\`\`\`\n${gameLines}\n\`\`\``,
+      description: `5게임 · 5,000원\n${lottoGamesBlock(lotto.games)}`,
       color: 0xfbbf24,
       fields: [
         { name: `최근 52회 자주 나온 번호`, value: ls.hotRecent.join(', '), inline: true },
@@ -105,7 +91,7 @@ export async function buildWeeklyLottery(now = new Date()): Promise<WeeklyLotter
     },
     {
       title: `🎫 연금복권720+ 제${pensionTarget.drawNo}회 (${pensionTarget.date} 목 추첨)`,
-      description: `모든조(1~5조) · 5,000원\n\`\`\`\n${PENSION_GROUPS.map((g) => `${g}조  ${pension.number.split('').join(' ')}`).join('\n')}\n\`\`\``,
+      description: `모든조(1~5조) · 5,000원\n${pensionAllGroupsBlock(pension.numbers)}\n${SOLD_OUT_HINT}`,
       color: 0x22c55e,
       fields: [
         { name: '자리별 역대 최다 숫자', value: pension.stats.topDigitByPosition.join(' '), inline: true },
@@ -142,12 +128,14 @@ export async function runWeeklyLottery(now = new Date()): Promise<{ result: Week
   const notify = await postToDiscord(result.payload, WEBHOOK_ENV);
   const saved: SavedPicks = {
     lotto: { drawNo: result.lottoDrawNo, games: result.lotto.games },
-    pension: { drawNo: result.pensionDrawNo, number: result.pension.number },
+    pension: { drawNo: result.pensionDrawNo, numbers: result.pension.numbers },
   };
-  try {
-    await store().setJSON(`picks-${result.lottoDrawNo}`, saved);
-  } catch (err) {
-    console.error('Saving lottery picks failed:', err);
-  }
+  await saveWeeklyPicks(result.lottoDrawNo, saved);
+  // So the bot's "다른 번호" never hands back one of these.
+  const issued = await readIssued('pension', result.pensionDrawNo);
+  await saveIssued('pension', result.pensionDrawNo, {
+    ...issued,
+    numbers: [...new Set([...issued.numbers, ...result.pension.numbers])],
+  });
   return { result, notify };
 }
