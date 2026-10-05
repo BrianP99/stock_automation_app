@@ -4,9 +4,9 @@ import type { TradeOrder, PortfolioState, Position } from '../src/types';
 // env vars via the global `Netlify.env` object, plain Node (local dev,
 // Express) via process.env. Never hardcode the URL: it's a bearer credential
 // (anyone with it can post to the channel) and this repo is public.
-function getWebhookUrl(): string | undefined {
+function getWebhookUrl(envKey = 'DISCORD_WEBHOOK_URL'): string | undefined {
   const netlifyEnv = (globalThis as any).Netlify?.env;
-  return netlifyEnv?.get?.('DISCORD_WEBHOOK_URL') || process.env.DISCORD_WEBHOOK_URL;
+  return netlifyEnv?.get?.(envKey) || process.env[envKey];
 }
 
 export interface DiscordNotifyResult {
@@ -15,8 +15,12 @@ export interface DiscordNotifyResult {
   error?: string;
 }
 
-async function postToDiscord(payload: unknown): Promise<DiscordNotifyResult> {
-  const webhookUrl = getWebhookUrl();
+/**
+ * `envKey` lets a feature post to its own channel; it falls back to the main
+ * DISCORD_WEBHOOK_URL when that variable isn't set.
+ */
+export async function postToDiscord(payload: unknown, envKey?: string): Promise<DiscordNotifyResult> {
+  const webhookUrl = (envKey && getWebhookUrl(envKey)) || getWebhookUrl();
   if (!webhookUrl) return { ok: false, error: 'DISCORD_WEBHOOK_URL이 설정되지 않았습니다.' };
 
   try {
